@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { isFormWrite } from "../src/browser/cdp.js";
-import { closestOptions, continuesOnAnotherPage, pickOption, pickSubmit, splitFailures } from "../src/browser/formRunner.js";
+import { closestOptions, pickOption } from "../src/browser/dropdowns.js";
+import { isClean, isReady, pickNext, pickSubmit, splitFailures } from "../src/browser/report.js";
 
 const hints = ["Edmonton", "Alberta", "AB", "Canada"];
 
@@ -102,10 +103,22 @@ describe("the button that sends a form", () => {
     expect(pickSubmit(["#s  /* Soumettre la candidature */"])?.selector).toBe("#s");
     expect(pickSubmit(["#p  /* Postuler */"])?.selector).toBe("#p");
   });
-  it("tells one page of several from a whole form", () => {
-    expect(continuesOnAnotherPage(['button[name="next"]  /* Next */'])).toBe(true);
-    expect(continuesOnAnotherPage(["#c  /* Save and continue */"])).toBe(true);
-    expect(continuesOnAnotherPage(["#n  /* Next */", "#s  /* Submit application */"])).toBe(false);
-    expect(continuesOnAnotherPage([])).toBe(false);
+  it("finds the way to the next page only when the page has no way to send", () => {
+    expect(pickNext(['button[name="next"]  /* Next */'])?.selector).toBe('button[name="next"]');
+    expect(pickNext(["#c  /* Save and continue */"])?.text).toBe("Save and continue");
+    expect(pickNext(["#n  /* Next */", "#s  /* Submit application */"])).toBeNull();
+    expect(pickNext(["#r  /* Review your answers */"])).toBeNull();
+    expect(pickNext([])).toBeNull();
+  });
+});
+
+describe("when a form may be sent", () => {
+  const page = { state: "filled" as const, drafts: [], reviews: [], failed: [], missingRequired: [] };
+  it("only from a clean last page", () => {
+    expect(isReady({ ...page, hasNext: false })).toBe(true);
+    expect(isReady({ ...page, hasNext: true })).toBe(false);
+    expect(isClean({ ...page })).toBe(true);
+    expect(isReady({ ...page, hasNext: false, missingRequired: ["Phone"] })).toBe(false);
+    expect(isReady({ ...page, state: "blocked", hasNext: false })).toBe(false);
   });
 });

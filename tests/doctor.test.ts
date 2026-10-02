@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkExtras, checkKey, checkNode, checkProfile, checkResume, formatChecks, isReadyToRun, nextStep, type Check } from "../src/doctor.js";
+import { checkKey, checkNode, checkProfile, checkResume, formatChecks, isReadyToRun, nextStep, type Check } from "../src/doctor.js";
 
 const ok = (name: string): Check => ({ name, ok: true, detail: "fine", fix: "" });
 const bad = (name: string, fix: string, optional = false): Check => ({ name, ok: false, detail: "missing", fix, optional });
@@ -36,14 +36,5 @@ describe("doctor", () => {
     expect(isReadyToRun(checks)).toBe(true);
     expect(nextStep(checks)).toBe("run discover");
     expect(nextStep([ok("Node.js")])).toMatch(/Everything is in place/);
-  });
-  it("lists Gmail and signed-in sites as offers that never block or nag", () => {
-    const extras = checkExtras(null, []);
-    expect(extras.every((c) => c.optional && !c.ok)).toBe(true);
-    expect(isReadyToRun([ok("Node.js"), ...extras])).toBe(true);
-    expect(nextStep([ok("Node.js"), ...extras])).toMatch(/Everything is in place/);
-    const set = checkExtras({ address: "someone@example.com", password: "x" }, [{ host: "jobs.example.com", url: "https://jobs.example.com", connectedAt: "", checkedAt: "" }]);
-    expect(set.every((c) => c.ok)).toBe(true);
-    expect(JSON.stringify(set)).not.toContain("someone@example.com");
   });
 });

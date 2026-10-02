@@ -26,11 +26,18 @@ export const PATHS = {
   /** Answers the writer has given before, kept so the same question is not paid for twice. */
   memory: path.join(ROOT, "data", "memory.json"),
   cache: path.join(ROOT, "data", "cache"),
+  /** What every user's runs have taught the tool about sites. Shipped with the repository. */
+  knowledgeShipped: path.join(ROOT, "knowledge", "sites.json"),
+  /** What this machine's runs have learned since. Merged with the shipped notes on reading. */
+  knowledgeLocal: path.join(ROOT, "data", "knowledge.json"),
+  /** Left by earlier versions: sites found behind a sign-in. Read once more and folded into the notes above. */
   walledHosts: path.join(ROOT, "data", "cache", "walled-hosts.json"),
-  /** Sites the person has signed in to, in the runner's Chrome profile. */
-  sites: path.join(ROOT, "data", "sites.json"),
-  /** Mail already read and what it was, so each message is judged once. */
-  inbox: path.join(ROOT, "data", "inbox.json"),
+  /** JEV's ratings of postings, kept so an unchanged posting is not rated again. */
+  ratings: path.join(ROOT, "data", "cache", "ratings.json"),
+  /** JEV's field mappings of forms, kept so an unchanged form is not mapped again. */
+  plans: path.join(ROOT, "data", "cache", "plans.json"),
+  /** Jobs the tool could not finish and left for the person, with the reason and the link. */
+  manual: path.join(ROOT, "manual.csv"),
   runs: path.join(ROOT, "data", "runs"),
   jevUsage: path.join(ROOT, "data", "runs", "jev-usage.jsonl"),
   writerUsage: path.join(ROOT, "data", "runs", "writer-usage.jsonl"),
@@ -95,8 +102,8 @@ export const DISCOVER = {
    * data/cache/walled-hosts.json and skipped the same way next time.
    */
   accountWalledHosts: ["eightfold.ai", "careers.microsoft.com", "jobs.intuit.com", "jobs.ea.com"],
-  /** Job boards whose forms run over several pages, which the fill runner does not walk yet. Their jobs are skipped with that reason. */
-  multiStepAts: ["jobvite", "smartrecruiters"],
+  /** Job boards whose forms the page scripts cannot read yet. Their jobs are skipped with that reason. */
+  unreadableAts: ["smartrecruiters"],
   /** Sources that are read from GitHub. Each entry names the raw file and its parser. */
   sources: {
     simplifyInternships:
@@ -151,6 +158,14 @@ export const FORM = {
   fieldsPerCall: 40,
 } as const;
 
+/** Answers JEV already gave to an unchanged question are reused. Turning this off only costs money and time. */
+export const CACHE = {
+  ratings: true,
+  plans: true,
+  /** The most form mappings kept. Each is a few kilobytes. */
+  maxPlans: 400,
+} as const;
+
 export const BROWSER = {
   /** The Chrome binary the fill runner drives over the DevTools protocol. */
   chromePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -166,6 +181,8 @@ export const BROWSER = {
   optionsMs: 4_000,
   /** A page that answered with an error is reopened once after this pause. */
   retryAfterMs: 8_000,
+  /** The most months a calendar is turned to reach a date. */
+  calendarTurns: 48,
   /** Waits before a typed value the page did not keep is put back: once soon, once later. */
   putBackAfterMs: [1_500, 5_000],
   /** Longest wait for a form to finish saving one field to its own server before the next field is set. */
@@ -217,40 +234,6 @@ export const MEMORY = {
   minWordOverlap: 0.3,
 } as const;
 
-/** Signing in is done by the person, in the runner's window. The tool only watches for it to be over. */
-export const SITES = {
-  /** How long `connect` waits for the person to finish signing in. */
-  connectTimeoutMs: 300_000,
-  /** How often the page is looked at while waiting. */
-  pollMs: 1_000,
-  /** The sign-in counts as done when no password box has been on the page for this long after one was. */
-  quietMs: 4_000,
-} as const;
-
-/** Mail is read, never changed: the mailbox is opened read-only. */
-export const MAIL = {
-  host: "imap.gmail.com",
-  port: 993,
-  /** How far back `inbox` reads when it is not told. */
-  lookbackDays: 21,
-  /** Characters of one message shown to JEV. */
-  maxBodyChars: 4_000,
-  /** Bytes of one message fetched: enough for the text part of a recruiting email. */
-  maxFetchBytes: 60_000,
-  timeoutMs: 30_000,
-  /** Headers are fetched this many messages at a time. */
-  fetchBatch: 200,
-  /** Mail systems that send on behalf of employers. A message from one of them counts as from the company it names. */
-  atsSenders: ["greenhouse-mail.io", "greenhouse.io", "ashbyhq.com", "lever.co", "myworkday.com", "smartrecruiters.com", "rippling.com", "workablemail.com", "workable.com", "bamboohr.com", "icims.com", "successfactors.com", "jobvite.com"],
-} as const;
-
-/** The mailbox to read, from .env. Null when the person has not set it up. */
-export function mailCredentials(): { address: string; password: string } | null {
-  const address = (process.env.GMAIL_ADDRESS ?? "").trim();
-  const password = (process.env.GMAIL_APP_PASSWORD ?? "").replace(/\s+/g, "");
-  return address && password ? { address, password } : null;
-}
-
 /** What `doctor` checks against. */
 export const DOCTOR = {
   minNodeMajor: 22,
@@ -262,10 +245,8 @@ export const DOCTOR = {
 } as const;
 
 export const RUN = {
-  /** Applications filled, then paused for human review, before the loop becomes autonomous. */
-  reviewFirst: 3,
-  /** Target applications per run. */
-  targetPerRun: 50,
+  /** How many queued jobs `discover` lists when it is done. */
+  listed: 50,
   /** Forms the runner fills side by side, one tab each. */
   fillConcurrency: 5,
   /** Of those, how many may be on the same site at once, and the pause between opening two forms there. Job boards throttle bursts. */
@@ -275,9 +256,13 @@ export const RUN = {
   gentleGapMs: 6_000,
   /** How long `codes` waits on one form for the person to type the code and send it. */
   codeWaitMs: 240_000,
+  /** The same pause for a site that has answered a burst with an emailed code before. */
+  submitGapAfterCodeMs: 75_000,
   /** The pause between two submissions to the same site. A burst of applications from one person looks like a robot, and boards answer it with a human check. */
   submitGapMs: 20_000,
-  /** How many times a form is opened and filled when values did not land. A page that loaded badly (a script of its own missing) is often fine on a second load. */
+  /** The most pages of one form the tool will walk. A form that goes on longer is left for the person. */
+  maxPages: 8,
+  /** How many times a form is opened and filled when values did not land. The second go comes when the other forms are done, with the window to itself. */
   fillAttempts: 2,
   /** Longest one form may take to open and fill. A page that never settles is recorded as blocked instead of holding up the run. */
   fillTimeoutMs: 180_000,

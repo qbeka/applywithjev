@@ -91,7 +91,7 @@
     return questionFor(el).replace(/\s*[*✱]\s*$/, "").slice(0, LABEL_MAX) || ownName(el) || label;
   };
   // A file box is usually labelled by its button ("Attach", "Choose file"). Which file it wants is said by the question above it.
-  const FILE_BUTTON = /^(attach|upload|upload file|choose file|select file|browse|replace file|drop or select|drag and drop|svgs? not supported|file[-_ ]?input|file$|no file (selected|chosen))/i;
+  const FILE_BUTTON = /^(attach|upload|upload file|choose file|select file|browse|replace file|drop or select|drag and drop|svgs? not supported|file[-_ ]?input|file$|no file (selected|chosen)|dropbox|google drive|one ?drive|enter manually|from device|my computer)/i;
   // The question above a file box, skipping the box's own buttons ("Attach", "Dropbox", "Enter manually").
   const fileQuestion = (el) => {
     let cur = el;
@@ -178,10 +178,31 @@
     }
     return "";
   };
-  const isRequired = (el, label) => el.required || el.getAttribute("aria-required") === "true" || /[*✱]\s*$|^\s*[*✱]|\(required\)/i.test(label) || /required/i.test(el.closest("[class*=required i]")?.className || "");
+  // A field that says it is optional is optional, whatever the box around it is called.
+  const isRequired = (el, label) => !/\(optional\)/i.test(label) && (el.required || el.getAttribute("aria-required") === "true" || /[*✱]\s*$|^\s*[*✱]|\(required\)/i.test(label) || /required/i.test(el.closest("[class*=required i]")?.className || ""));
 
   // A plain text input with a suggestion list beside it (Lever's location box) only accepts a picked suggestion.
   const hasSuggestBox = (el) => el.tagName === "INPUT" && !!el.parentElement && !!el.parentElement.querySelector('[class*="dropdown-results" i], [class*="autocomplete" i], [class*="typeahead" i], [class*="suggestions" i]');
+  // A read-only input is a date box when it, or the field around it, says date, or a calendar hangs beside it.
+  const DATE_WORD = /date|calendar|datepicker|\bdob\b|birthday/i;
+  const looksLikeDateBox = (el) => {
+    const own = `${el.className} ${el.name} ${el.id} ${el.getAttribute("aria-label") || ""} ${el.getAttribute("data-testid") || ""}`;
+    if (DATE_WORD.test(own)) return true;
+    const item = el.closest("[variant], [class*=form-item i], [class*=field i]");
+    if (item && (DATE_WORD.test(item.getAttribute("variant") || "") || item.querySelector('[class*="date-picker" i], [class*="datepicker" i], [class*="calendar" i]'))) return true;
+    return !Number.isNaN(Date.parse(el.getAttribute("placeholder") || "")) && /\d{4}/.test(el.getAttribute("placeholder") || "");
+  };
+  // The widget that draws a control, when it is one the tool knows. Controls of one widget take values the same way.
+  const widgetOf = (el, isCalendar, drawnByLabel) => {
+    if (isCalendar) return "calendar";
+    if (el.closest(".iti")) return "intl-tel";
+    if (el.closest('[class*="select__control"]')) return "react-select";
+    if (el.closest(".selectize-input, .selectize-control")) return "selectize";
+    if (el.parentElement && el.parentElement.querySelector("datalist")) return "datalist";
+    if (el.closest('[data-testid="select-controller"]')) return "testid-select";
+    if (drawnByLabel) return "label-drawn";
+    return "";
+  };
   const controls = document.querySelectorAll("input, select, textarea, [role=combobox], [role=listbox]");
   const containerOf = (el) => el.closest("fieldset, [class*=field i], [class*=question i], [data-field-path], [id^=question], .form-group") || el.parentElement;
   const usedContainers = new Set();
@@ -200,13 +221,18 @@
       if (c && (usedContainers.has(c) || c.querySelector("input:not([type=hidden]), select, textarea"))) return;
     }
     if (isControl && type !== "radio") usedContainers.add(containerOf(el));
-    if (!visible(el) && type !== "file") return;
-    if (el.disabled || el.readOnly) return;
+    // A radio or a checkbox is often drawn by its label, with the real box kept out of sight behind it.
+    const drawnByLabel = (type === "radio" || type === "checkbox") && !visible(el) && [el.closest("label"), el.id && document.querySelector(`label[for="${cssEscape(el.id)}"]`)].some((l) => l && visible(l));
+    if (!visible(el) && type !== "file" && !drawnByLabel) return;
+    // A box that cannot be typed into is skipped, unless it is a date box set through a calendar.
+    const isCalendar = el.readOnly && isControl && tag === "input" && looksLikeDateBox(el);
+    if (el.disabled || (el.readOnly && !isCalendar)) return;
     // A text box hidden from people and from the keyboard is the site's own bookkeeping (the parts of an address it fills in itself).
     if (el.getAttribute("aria-hidden") === "true" && el.tabIndex === -1 && !["radio", "checkbox", "file"].includes(type)) return;
     const role = el.getAttribute("role");
     let kind;
-    if (tag === "select") kind = "select";
+    if (isCalendar) kind = "calendar";
+    else if (tag === "select") kind = "select";
     else if (tag === "textarea") kind = "textarea";
     else if (role === "combobox" || el.getAttribute("aria-autocomplete") === "list" || role === "listbox" || hasSuggestBox(el)) kind = "combobox";
     else if (type === "radio") kind = "radio";
@@ -217,6 +243,7 @@
 
     const f = {
       id: "f" + i++,
+      widget: widgetOf(el, isCalendar, drawnByLabel),
       selector: selectorFor(el),
       kind,
       name: el.name || el.id || "",
@@ -293,6 +320,7 @@
     const selected = buttons.find((b) => b.getAttribute("aria-pressed") === "true" || b.getAttribute("aria-checked") === "true" || /selected|active|checked/i.test(b.className) || b.dataset.state === "on" || b.dataset.state === "checked" || b.dataset.selected === "true");
     fields.push({
       id: "f" + i++,
+      widget: drawnRadios ? "drawn-radio" : "buttons",
       selector: selectorFor(c),
       kind: "radio",
       name: c.getAttribute("data-field-path") || "",
@@ -324,7 +352,9 @@
 
   // Some careers sites embed the real form in an iframe (Greenhouse, Lever). Report those so the caller can navigate into one.
   out.hasPassword = [...document.querySelectorAll("input[type=password]")].some(visible);
-  out.frames = [...document.querySelectorAll("iframe[src]")].map((f) => f.src).filter((src) => /greenhouse|lever\.co|ashbyhq|workday|smartrecruiters|jobvite|bamboohr|rippling|icims/i.test(src));
+  // Told by the frame's own host. A share widget that merely names a job board in its address is not a form.
+  const hostOf = (src) => { try { return new URL(src).hostname; } catch { return ""; } };
+  out.frames = [...document.querySelectorAll("iframe[src]")].map((f) => f.src).filter((src) => /greenhouse|lever\.co|ashbyhq|workday|smartrecruiters|jobvite|bamboohr|rippling|icims/i.test(hostOf(src)));
   const form = fields.length && document.querySelector(fields[0].selector)?.closest("form");
   const headings = [...(form || document).querySelectorAll("h1, h2, h3, p")].slice(0, 8).map(text).filter(Boolean);
   out.context = headings.join(" | ").slice(0, 800);

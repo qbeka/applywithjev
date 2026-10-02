@@ -5,12 +5,15 @@
  */
 import { z } from "zod";
 
-export const FieldKind = z.enum(["text", "email", "tel", "url", "number", "date", "textarea", "select", "combobox", "radio", "checkbox", "file"]);
+/** calendar: a date box that cannot be typed into and is set by clicking through its pop-up of months and days. */
+export const FieldKind = z.enum(["text", "email", "tel", "url", "number", "date", "calendar", "textarea", "select", "combobox", "radio", "checkbox", "file"]);
 export type FieldKind = z.infer<typeof FieldKind>;
 
 export const DumpedField = z.object({
   /** Stable key for this dump: f0, f1, ... */
   id: z.string(),
+  /** The widget that draws the control, when the dump recognises it: intl-tel, react-select, datalist, calendar, buttons, label-drawn. */
+  widget: z.string().default(""),
   /** CSS selector that finds the element again (or the radio group's first input). */
   selector: z.string(),
   kind: FieldKind,

@@ -8,7 +8,9 @@
  * Checkboxes: a noul, "should this be checked".
  * File inputs: resume upload, no model needed.
  */
-import { FORM } from "../config.js";
+import { FORM, CACHE, PATHS } from "../config.js";
+import { hashOf, KeyedCache } from "../util/cache.js";
+import { isoOf, toYmd } from "../util/dates.js";
 import type { JevClient } from "../jev/client.js";
 import { choice, noul } from "../jev/questions.js";
 import type { Answer, ChoiceAnswer, NoulAnswer, Questions } from "../jev/types.js";
@@ -85,7 +87,7 @@ export function authForCountry(profile: Profile, country: string): { authorized:
   return { authorized: ok ? "Yes" : "No", requires_sponsorship: ok ? "No" : "Yes" };
 }
 
-const TEXT_KINDS = new Set(["text", "email", "tel", "url", "number", "date", "textarea"]);
+const TEXT_KINDS = new Set(["text", "email", "tel", "url", "number", "date", "calendar", "textarea"]);
 
 /** Input types whose value is fixed by the type itself; JEV only picks among the matching keys. */
 const KEYS_BY_KIND: Partial<Record<string, string[]>> = {
@@ -231,7 +233,28 @@ export function isSlotChoice(f: DumpedField): boolean {
 /** Typing a name to sign an agreement is the candidate's act, not the tool's. */
 const SIGNATURE_LABEL = /\bNDA\b|non-?disclosure|arbitration agreement|e-?signature|electronic signature|(typ(e|ing)|enter(ing)?) your (full |legal )*name/i;
 
+let plans: KeyedCache<FillPlan> | null = null;
+
+/**
+ * Maps a form to a fill plan. A form that was mapped before, with nothing changed in the form,
+ * the job or the candidate, gets the same plan back without asking JEV: this is the second fill
+ * of a form, and the real run after a rehearsal.
+ */
 export async function mapForm(jev: JevClient, profile: Profile, job: Job, dump: FieldsDump): Promise<FillPlan> {
+  if (!CACHE.plans) return mapFormFresh(jev, profile, job, dump);
+  plans ??= new KeyedCache<FillPlan>(PATHS.plans, "all", CACHE.maxPlans);
+  // The values a form happens to hold (an earlier fill, an autofill) do not change what belongs in it.
+  const fields = dump.fields.map(({ value: _value, checked: _checked, ...rest }) => rest);
+  const key = hashOf({ fields, submit: dump.submitSelectors, state: buildFormState(profile, job, { ...dump, url: "" }, []), form: FORM });
+  const hit = plans.get(key);
+  if (hit) return { ...hit, jobId: job.id, url: dump.url, jevCostUsd: 0 };
+  const plan = await mapFormFresh(jev, profile, job, dump);
+  plans.set(key, plan);
+  plans.save();
+  return plan;
+}
+
+async function mapFormFresh(jev: JevClient, profile: Profile, job: Job, dump: FieldsDump): Promise<FillPlan> {
   const planned: PlannedField[] = [];
   const startCost = jev.usage.costUsd;
   const resolvedInCode = new Set<string>();
@@ -346,6 +369,12 @@ export function planField(f: DumpedField, answer: Answer | undefined, profile: P
     if (value === null) {
       if (key === "gpa") return { ...base, action: f.required ? "fill" : "skip", key, value: f.required ? gpaValue(profile) : null, confidence: a.confidence, note: f.required ? "GPA given only because the field is required" : "GPA not volunteered" };
       return { ...base, action: f.required ? "review" : "skip", key, value: null, confidence: a.confidence, note: f.required ? "required but the profile has no value" : null };
+    }
+    if (f.kind === "calendar") {
+      // A calendar takes a day. A value that names only a month is its first day; anything that is not a date goes to Claude.
+      const day = toYmd(value);
+      if (!day) return { ...base, action: "review", key, value: null, confidence: a.confidence, note: "the calendar needs a date, and the profile's value is not one" };
+      return { ...base, action: "fill", key, value: isoOf(day), confidence: a.confidence, note };
     }
     return { ...base, action: "fill", key, value, confidence: a.confidence, note };
   }

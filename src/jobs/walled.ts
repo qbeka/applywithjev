@@ -1,16 +1,17 @@
 /**
- * Careers sites that put a login or an account in front of the form, or
- * show no form the runner can reach. The tool never creates accounts, so
- * jobs there are skipped before rating. The list starts from config and
- * grows: when an apply run meets such a page, the site is remembered here
- * and skipped by the next discover.
+ * Careers sites that put a sign-in or an account in front of the form. The
+ * tool never signs in and never creates accounts, so jobs there are skipped
+ * before rating. The list starts from config and grows: when a run meets
+ * such a page, the site goes into the site knowledge (src/knowledge/sites.ts)
+ * and the next discover skips it.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { DISCOVER, PATHS } from "../config.js";
+import { learn, signInHosts } from "../knowledge/sites.js";
 import { hostIs } from "./normalize.js";
 
-const SHARED_BOARDS = ["greenhouse.io", "lever.co", "ashbyhq.com", "rippling.com", "bamboohr.com", "smartrecruiters.com", "jobvite.com"];
+/** One company's settings on a shared board say nothing about the other companies there. */
+const SHARED_BOARDS = ["greenhouse.io", "lever.co", "ashbyhq.com", "rippling.com", "bamboohr.com", "smartrecruiters.com", "jobvite.com", "workable.com"];
 
 const hostOf = (url: string): string => {
   try {
@@ -20,7 +21,8 @@ const hostOf = (url: string): string => {
   }
 };
 
-export function learnedWalledHosts(file = PATHS.walledHosts): string[] {
+/** Sites an earlier version noted in its own file. Still honoured. */
+function legacyWalledHosts(file = PATHS.walledHosts): string[] {
   if (!existsSync(file)) return [];
   try {
     const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
@@ -30,28 +32,17 @@ export function learnedWalledHosts(file = PATHS.walledHosts): string[] {
   }
 }
 
-/** connected: hosts the person has signed in to with `connect`. A site they are signed in to is not walled. */
-export function isWalled(url: string, learned: string[] = learnedWalledHosts(), connected: string[] = []): boolean {
+export const learnedWalledHosts = (known: string[] = signInHosts()): string[] => [...new Set([...known, ...legacyWalledHosts()])];
+
+export function isWalled(url: string, learned: string[] = learnedWalledHosts()): boolean {
   const host = hostOf(url);
   if (!host) return false;
-  if (connected.includes(host)) return false;
   return DISCOVER.accountWalledHosts.some((h) => hostIs(host, h)) || learned.includes(host);
 }
 
-/** Takes a site off the learned list, once the person has signed in to it. */
-export function forgetWalledHost(url: string, file = PATHS.walledHosts): void {
-  const host = hostOf(url.includes("://") ? url : `https://${url}`);
-  const hosts = learnedWalledHosts(file);
-  if (!hosts.includes(host)) return;
-  writeFileSync(file, JSON.stringify(hosts.filter((h) => h !== host), null, 2));
-}
-
-/** Records the site of a job that turned out to need a login. The big ATS hosts are never recorded: one company's settings say nothing about the rest. */
-export function rememberWalledHost(url: string, file = PATHS.walledHosts): void {
+/** Notes that a job's site wanted a sign-in, so the next discover skips it. */
+export function rememberWalledHost(url: string, notes: string = PATHS.knowledgeLocal): void {
   const host = hostOf(url);
   if (!host || SHARED_BOARDS.some((d) => hostIs(host, d))) return;
-  const hosts = learnedWalledHosts(file);
-  if (hosts.includes(host)) return;
-  mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify([...hosts, host].sort(), null, 2));
+  learn(url, { signIn: true }, notes);
 }

@@ -10,8 +10,8 @@ data/voice.local.md
 data/applications.csv
 applied.csv
 data/memory.json
-data/sites.json
-data/inbox.json
+data/knowledge.json
+manual.csv
 data/queue.json
 data/cache/
 data/runs/

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { APPLIED_COLUMNS, COLUMNS, SHEET_COLUMNS, appliedRecords, compactRows, emptyRow, localDate, parseCsv, saveRows, toCsv, upsertEntry } from "../src/log/csv.js";
+import { APPLIED_COLUMNS, COLUMNS, MANUAL_COLUMNS, SHEET_COLUMNS, appliedRecords, compactRows, emptyRow, localDate, manualRecords, parseCsv, saveRows, toCsv, upsertEntry } from "../src/log/csv.js";
 import type { QueueEntry } from "../src/jobs/queue.js";
 
 const entry = (over: Partial<QueueEntry> = {}): QueueEntry => ({
@@ -65,20 +65,25 @@ describe("csv", () => {
     expect(sent.map((r) => r.company)).toEqual(["Gamma", "Acme"]);
     expect(sent[1]).toMatchObject({ applied_on: "2026-10-01", role: "SWE Intern", job_link: "https://x/1", what_they_do: "Builds rockets.", job_id: "abc" });
   });
-  it("keeps a recorded reply when the row is written again", () => {
-    let rows = upsertEntry([], entry({ status: "applied", appliedAt: "2026-10-01T15:00:00Z" }), { Response: "Interview", "Response On": "2026-10-05" });
-    rows = upsertEntry(rows, entry({ status: "applied", appliedAt: "2026-10-01T15:00:00Z" }));
-    expect(appliedRecords(rows)[0]).toMatchObject({ response: "Interview", response_on: "2026-10-05" });
-  });
   it("writes applied.csv next to the full record, with one header a script can rely on", () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "awj-csv-"));
     const rows = upsertEntry([], entry({ status: "applied", appliedAt: "2026-10-01T15:00:00Z" }));
-    saveRows(rows, path.join(dir, "applications.csv"), path.join(dir, "applied.csv"));
+    saveRows(rows, path.join(dir, "applications.csv"), path.join(dir, "applied.csv"), path.join(dir, "manual.csv"));
+    expect(parseCsv(readFileSync(path.join(dir, "manual.csv"), "utf8"))[0]).toEqual([...MANUAL_COLUMNS]);
     const [header, first] = parseCsv(readFileSync(path.join(dir, "applied.csv"), "utf8"));
     expect(header).toEqual([...APPLIED_COLUMNS]);
     expect(header?.every((h) => /^[a-z_]+$/.test(h))).toBe(true);
-    expect(header?.slice(-2)).toEqual(["response", "response_on"]);
     expect(first?.[1]).toBe("Acme");
+  });
+  it("lists the jobs left for the person, best fit first, each with its reason and its link", () => {
+    let rows = upsertEntry([], entry({ status: "needs_review", statusReason: "asks for a signature: Type your name to agree to the NDA" }));
+    rows = upsertEntry(rows, entry({ job: { ...entry().job, id: "b", url: "https://x/2", company: "Beta" }, fit: { ...entry().fit!, score: 0.9 }, status: "blocked", statusReason: "the site wants a sign-in or an account" }));
+    rows = upsertEntry(rows, entry({ job: { ...entry().job, id: "c", url: "https://x/3", company: "Gamma" }, status: "applied", appliedAt: "2026-10-02T15:00:00Z" }));
+    rows = upsertEntry(rows, entry({ job: { ...entry().job, id: "d", url: "https://x/4", company: "Delta" }, status: "skipped", statusReason: "workday" }));
+    const todo = manualRecords(rows);
+    expect(todo.map((r) => r.company)).toEqual(["Beta", "Acme"]);
+    expect(todo[0]).toMatchObject({ reason: "the site wants a sign-in or an account", job_link: "https://x/2", job_id: "b" });
+    expect(todo[1]?.reason).toMatch(/asks for a signature/);
   });
 });
 

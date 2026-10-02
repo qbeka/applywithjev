@@ -1,0 +1,274 @@
+{
+ "version": 1,
+ "sites": {
+  "apply.workable.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 1
+    },
+    "email": {
+     "method": "script",
+     "worked": 1
+    },
+    "tel:intl-tel": {
+     "method": "script",
+     "worked": 1
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "forms": 0,
+   "ready": 0,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "ats.rippling.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 6
+    },
+    "combobox:testid-select": {
+     "method": "clicked",
+     "worked": 4
+    },
+    "combobox": {
+     "method": "clicked",
+     "worked": 6
+    },
+    "radio:drawn-radio": {
+     "method": "script",
+     "worked": 4
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "forms": 0,
+   "ready": 0,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "careers.withwaymo.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 18
+    },
+    "email": {
+     "method": "script",
+     "worked": 18
+    },
+    "select": {
+     "method": "script",
+     "worked": 18
+    },
+    "checkbox": {
+     "method": "script",
+     "worked": 18
+    },
+    "tel:intl-tel": {
+     "method": "typed",
+     "worked": 3
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "forms": 9,
+   "ready": 5,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "job-boards.eu.greenhouse.io": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 1
+    },
+    "combobox:react-select": {
+     "method": "script",
+     "worked": 1
+    },
+    "tel:intl-tel": {
+     "method": "script",
+     "worked": 1
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "forms": 0,
+   "ready": 0,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "job-boards.greenhouse.io": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 43
+    },
+    "combobox:react-select": {
+     "method": "script",
+     "worked": 43
+    },
+    "tel:intl-tel": {
+     "method": "script",
+     "worked": 43
+    },
+    "number": {
+     "method": "script",
+     "worked": 8
+    },
+    "checkbox": {
+     "method": "script",
+     "worked": 11
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "forms": 27,
+   "ready": 27,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "jobs.ashbyhq.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 12
+    },
+    "email": {
+     "method": "script",
+     "worked": 12
+    },
+    "radio": {
+     "method": "script",
+     "worked": 1
+    },
+    "radio:buttons": {
+     "method": "script",
+     "worked": 1
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "forms": 9,
+   "ready": 9,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "specteraerospace.bamboohr.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 1
+    },
+    "radio": {
+     "method": "script",
+     "worked": 1
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "forms": 0,
+   "ready": 0,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "versafile1.bamboohr.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 4
+    },
+    "textarea": {
+     "method": "script",
+     "worked": 4
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "forms": 0,
+   "ready": 0,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "www.rubrik.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 1
+    },
+    "select": {
+     "method": "script",
+     "worked": 1
+    },
+    "checkbox": {
+     "method": "script",
+     "worked": 1
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "forms": 0,
+   "ready": 0,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "www.tesla.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 2
+    },
+    "select": {
+     "method": "script",
+     "worked": 3
+    },
+    "calendar:calendar": {
+     "method": "calendar",
+     "worked": 1
+    },
+    "radio": {
+     "method": "script",
+     "worked": 2
+    },
+    "checkbox": {
+     "method": "script",
+     "worked": 1
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "forms": 0,
+   "ready": 0,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "www.udig.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 1
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "forms": 0,
+   "ready": 0,
+   "trouble": {},
+   "updated": "2026-10-02"
+  }
+ }
+}

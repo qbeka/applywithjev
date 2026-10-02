@@ -39,7 +39,7 @@ export function preFilter(job: Job, now = new Date(), walled: (url: string) => b
     return `${job.ats} (needs an account)`;
   }
   if (walled(job.url)) return "careers site needs an account";
-  if ((DISCOVER.multiStepAts as readonly string[]).includes(job.ats)) return `${job.ats} (multi-step form, not supported yet)`;
+  if ((DISCOVER.unreadableAts as readonly string[]).includes(job.ats)) return `${job.ats} (its form cannot be read yet)`;
   const age = ageDays(job, now);
   if (age !== null && age > DISCOVER.maxAgeDays) return `posted ${age} days ago`;
   if (NON_SOFTWARE_TITLE.test(job.title) && !SOFTWARE_TITLE.test(job.title)) {

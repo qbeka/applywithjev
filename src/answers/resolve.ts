@@ -32,6 +32,7 @@ const SYSTEM = [
   "",
   "How to answer each kind of field.",
   "- select, radio, combobox with options: value is one option copied exactly. With no options listed for a combobox, value is the text to search for.",
+  "- calendar: one date as YYYY-MM-DD, taken from the facts. When the facts give only a month, use its first day.",
   "- checkbox: \"true\" or \"false\". Consent that is needed to submit the application is \"true\". Optional marketing, job alerts, text messages and keeping data for future roles are \"false\".",
   "- text and textarea: write in the candidate's voice, following the voice rules exactly, inside maxLength. Match the length to the question: one line for a one-line box, 60 to 140 words for an open question unless it asks for more or less.",
   "- A checkbox or radio option comes with its question. Decide the whole group together from the question: tick the options that are true for the candidate, and for a yes/no pair tick exactly one.",

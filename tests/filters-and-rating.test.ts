@@ -146,10 +146,11 @@ describe("graduation window and account walls", () => {
     expect(JSON.stringify(q.graduation_excluded)).toContain("December 2028");
     for (const k of Object.keys(answers())) expect(q).toHaveProperty(k);
   });
-  it("skips careers sites that need an account and boards whose forms run over several pages", () => {
+  it("skips careers sites that need an account and boards whose forms cannot be read", () => {
     expect(preFilter(job({ url: "https://acme.eightfold.ai/careers/job/1", ats: "other" }), now, () => true)).toMatch(/account/);
-    expect(preFilter(job({ ats: "jobvite" }), now, () => false)).toMatch(/multi-step/);
-    expect(preFilter(job({ ats: "smartrecruiters" }), now, () => false)).toMatch(/multi-step/);
+    // Jobvite's forms run over several pages, which the runner walks. SmartRecruiters' cannot be read yet.
+    expect(preFilter(job({ ats: "jobvite" }), now, () => false)).toBeNull();
+    expect(preFilter(job({ ats: "smartrecruiters" }), now, () => false)).toMatch(/cannot be read/);
     expect(preFilter(job(), now, () => false)).toBeNull();
   });
 });

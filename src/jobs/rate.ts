@@ -10,6 +10,7 @@ import type { Answer, ChoiceAnswer, NoulAnswer, Questions, ScoreAnswer } from ".
 import { monthName, usStatus, type Profile } from "../profile/schema.js";
 import { locationTier, type LocationTier } from "./hardFilters.js";
 import { ageDays, type Job } from "./normalize.js";
+import { hashOf, type KeyedCache } from "../util/cache.js";
 
 const LEVELS5 = ["None", "Weak", "Partial", "Strong", "Near exact"];
 
@@ -116,8 +117,25 @@ export function buildFitState(job: Job, profile: Profile, now = new Date()): Rec
   };
 }
 
-export async function rateJob(jev: JevClient, job: Job, profile: Profile, now = new Date()): Promise<FitResult> {
-  const answers = await jev.decide(buildFitState(job, profile, now), fitQuestions(profile), `rate:${job.company}:${job.title}`);
+/**
+ * What a rating depends on: the posting as JEV sees it, the candidate, and the questions. The
+ * posting's age is left out. It changes every day, it is not what the questions are about, and
+ * the score takes it from the date, not from JEV.
+ */
+export function ratingKey(job: Job, profile: Profile): string {
+  const state = buildFitState(job, profile, new Date(0)) as { job: Record<string, unknown>; candidate: unknown };
+  const { posted_days_ago: _age, ...posting } = state.job;
+  return hashOf({ id: job.id, posting, candidate: state.candidate, questions: fitQuestions(profile) });
+}
+
+/** Rates a posting. With a cache, an unchanged posting gets the answers JEV gave before, and the score is worked out afresh for today. */
+export async function rateJob(jev: JevClient, job: Job, profile: Profile, now = new Date(), cache?: KeyedCache<Record<string, Answer>>): Promise<FitResult> {
+  const key = cache ? ratingKey(job, profile) : "";
+  let answers = cache?.get(key);
+  if (!answers) {
+    answers = await jev.decide(buildFitState(job, profile, now), fitQuestions(profile), `rate:${job.company}:${job.title}`);
+    cache?.set(key, answers);
+  }
   return scoreFromAnswers(job, answers, now, usStatus(profile));
 }
 

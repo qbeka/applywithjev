@@ -25,11 +25,12 @@ export function limiter(n: number): <T>(work: () => Promise<T>) => Promise<T> {
 }
 
 /** One piece of work at a time per key, with a pause after each before the next for the same key starts. Other keys are not held up. */
-export function spacer(gapMs: number): <T>(key: string, work: () => Promise<T>) => Promise<T> {
+export function spacer(gapMs: number | ((key: string) => number)): <T>(key: string, work: () => Promise<T>) => Promise<T> {
   const turns = new Map<string, Promise<unknown>>();
+  const gap = (key: string) => (typeof gapMs === "number" ? gapMs : gapMs(key));
   return (key, work) => {
     const run = (turns.get(key) ?? Promise.resolve()).then(work);
-    turns.set(key, run.then(() => sleep(gapMs), () => sleep(gapMs)));
+    turns.set(key, run.then(() => sleep(gap(key)), () => sleep(gap(key))));
     return run;
   };
 }

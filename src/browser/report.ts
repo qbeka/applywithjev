@@ -1,0 +1,137 @@
+/**
+ * What a fill produced: the report a person reads, the plan a later step
+ * needs, and the rules that say whether a form may be sent. Nothing here
+ * touches the browser, so every rule is tested offline.
+ */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { PATHS } from "../config.js";
+import type { FieldsDump, FillPlan } from "../forms/fields.js";
+import type { Resolution } from "../answers/memory.js";
+import type { ControlState } from "./session.js";
+
+export type Fill = { selector: string; kind: string; value: string };
+export type FieldReport = { label: string; required: boolean; action: string; shown: string; note: string | null };
+export type FillReport = {
+  jobId: string;
+  company: string;
+  title: string;
+  ats: string;
+  url: string;
+  state: "filled" | "blocked";
+  reason: string | null;
+  fields: FieldReport[];
+  drafts: FillPlan["drafts"];
+  reviews: FillPlan["reviews"];
+  failed: { selector: string; label: string; why: string }[];
+  /** Optional fields the tool wanted to answer, could not, and left empty. They do not hold the form. */
+  leftBlank: { selector: string; label: string; why: string }[];
+  missingRequired: string[];
+  /** True when nothing is left open: every wanted value is on the page and no required field is empty. Only a ready form may be submitted. */
+  ready: boolean;
+  /** What Claude decided about the fields JEV left open, once resolve has run. */
+  resolution?: Resolution;
+  /** How many of those answers came from the answer memory, and whether Claude had to be asked at all. */
+  recalled?: number;
+  writerCalled?: boolean;
+  /** Which page of the form this report describes. A one-page form is page 1. */
+  page: number;
+  /** The fields of the pages before this one, as they were left. */
+  earlier: FieldReport[];
+  /** True when this page has a Next or Continue button and no Submit: the form goes on. */
+  hasNext: boolean;
+  /** Set when the form's Next was clicked and the form did not move: what the page said. Such a form is not clicked again. */
+  stuck?: string;
+  /** True when moving to the next page sent the application: the button that looked like Next was the last one. */
+  sent?: boolean;
+  seconds: number;
+  jevCostUsd: number;
+};
+
+const reportFile = (jobId: string) => path.join(PATHS.runs, `${jobId}.report.json`);
+const planFile = (jobId: string) => path.join(PATHS.runs, `${jobId}.plan.json`);
+
+export function saveReport(r: FillReport): FillReport {
+  mkdirSync(PATHS.runs, { recursive: true });
+  writeFileSync(reportFile(r.jobId), JSON.stringify(r, null, 2));
+  return r;
+}
+
+export function loadReport(jobId: string): FillReport {
+  if (!existsSync(reportFile(jobId))) throw new Error(`No fill report for job ${jobId}. Run fill first.`);
+  const r = JSON.parse(readFileSync(reportFile(jobId), "utf8")) as FillReport;
+  // A report written before forms had pages is a one-page form.
+  return { ...r, page: r.page ?? 1, earlier: r.earlier ?? [], hasNext: r.hasNext ?? false, leftBlank: r.leftBlank ?? [] };
+}
+
+/** The dump and the plan of the page a job's tab shows, kept for the steps after the fill. */
+export function savePlan(jobId: string, dump: FieldsDump, plan: FillPlan): void {
+  mkdirSync(PATHS.runs, { recursive: true });
+  writeFileSync(planFile(jobId), JSON.stringify({ dump, plan }, null, 2));
+}
+
+export function loadPlan(jobId: string): { dump: FieldsDump; plan: FillPlan } {
+  return JSON.parse(readFileSync(planFile(jobId), "utf8")) as { dump: FieldsDump; plan: FillPlan };
+}
+
+/** A report for a job whose form could not be opened or filled at all. */
+export function blockedReport(job: { id: string; company: string; title: string; ats: string; url: string }, reason: string, url = job.url, seconds = 0): FillReport {
+  return { jobId: job.id, company: job.company, title: job.title, ats: job.ats, url, state: "blocked", reason, fields: [], drafts: [], reviews: [], failed: [], leftBlank: [], missingRequired: [], ready: false, page: 1, earlier: [], hasNext: false, seconds, jevCostUsd: 0 };
+}
+
+/**
+ * Required fields the page shows empty. A group of checkboxes that share a name is one question:
+ * it is answered once any box in it is ticked, so the unticked ones are not missing.
+ */
+export function emptyRequiredFields(d: FieldsDump, plan: FillPlan, shown: string[], states: ControlState[]): FillPlan["fields"] {
+  const nameOf = new Map(d.fields.map((f) => [f.selector, f.kind === "checkbox" ? f.name : ""]));
+  const answeredGroups = new Set(plan.fields.filter((f, i) => f.kind === "checkbox" && shown[i]).map((f) => nameOf.get(f.selector)).filter((n): n is string => !!n));
+  return plan.fields.filter((f, i) => f.required && !shown[i] && states[i] !== "off" && f.action !== "upload" && !(f.kind === "checkbox" && answeredGroups.has(nameOf.get(f.selector) ?? "")));
+}
+
+export const emptyRequired = (d: FieldsDump, plan: FillPlan, shown: string[], states: ControlState[]) => emptyRequiredFields(d, plan, shown, states).map((f) => f.label);
+
+type Open = Pick<FillReport, "state" | "drafts" | "reviews" | "failed" | "missingRequired">;
+
+/** Nothing is left open on this page: every wanted value is on it and no required field is empty. */
+export const isClean = (r: Open) => r.state === "filled" && !r.drafts.length && !r.reviews.length && !r.failed.length && !r.missingRequired.length;
+
+/** A form may be sent only from its last page, and only when that page is clean. */
+export const isReady = (r: Open & Pick<FillReport, "hasNext">) => isClean(r) && !r.hasNext;
+
+export const SIGN_IN_REASON = "the site wants a sign-in or an account";
+
+const buttons = (submitSelectors: string[]) => submitSelectors.map((s) => ({ selector: s.split("  /*")[0] ?? s, text: /\/\*\s*(.*?)\s*\*\//.exec(s)?.[1] ?? "" }));
+
+/** The control that sends the form, from the buttons the dump found. English first, then the French a bilingual Canadian form uses. */
+export function pickSubmit(submitSelectors: string[]): { selector: string; text: string } | null {
+  const candidates = buttons(submitSelectors);
+  return candidates.find((c) => /submit|soumettre/i.test(c.text)) ?? candidates.find((c) => /apply|send|finish|postuler|envoyer/i.test(c.text) && !/linkedin|indeed/i.test(c.text)) ?? null;
+}
+
+/** The control that leads to the next page, when the page has one and has no way to send. */
+export function pickNext(submitSelectors: string[]): { selector: string; text: string } | null {
+  if (pickSubmit(submitSelectors)) return null;
+  return buttons(submitSelectors).find((c) => /^(next|next step|continue|save and continue|save & continue|save and next)\b/i.test(c.text)) ?? null;
+}
+
+export type Failure = { selector: string; why: string };
+/**
+ * Sorts what did not land into what holds the form and what does not. An optional field that the
+ * page shows empty is simply unanswered, which is true and harmless, so it is recorded and the form
+ * goes on. Everything else holds the form: a required field, a field that shows some other value,
+ * the resume, a field the plan does not know, and a save the form's own server refused.
+ */
+export function splitFailures(plan: Pick<FillPlan, "fields">, failed: Failure[], shown: string[]): { holds: Failure[]; leftBlank: Failure[] } {
+  const holds: Failure[] = [];
+  const leftBlank: Failure[] = [];
+  for (const given of failed) {
+    const i = plan.fields.findIndex((p) => p.selector === given.selector);
+    const field = plan.fields[i];
+    // A pay box that refuses words wants a number, and the profile gives none: say so instead of "did not land".
+    const f = field && /salary|compensation|pay\b/i.test(field.label) && /did not keep|not confirmed/.test(given.why) ? { ...given, why: "the pay box takes only a number, and your profile gives no pay figure" } : given;
+    const harmless = !!field && !field.required && !shown[i] && field.action !== "upload" && field.kind !== "file" && !/refused/.test(f.why);
+    (harmless ? leftBlank : holds).push(f);
+  }
+  return { holds, leftBlank };
+}

@@ -145,7 +145,9 @@
     state(sel) {
       const el = q(sel);
       if (!el) return "missing";
-      return !el.disabled && (el.type === "file" || visible(el) || visible(control(el))) ? "on" : "off";
+      // A box drawn by its label counts as there when the label is.
+      const label = (el.type === "radio" || el.type === "checkbox") && (el.closest("label") || (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)));
+      return !el.disabled && (el.type === "file" || visible(el) || visible(control(el)) || (label && visible(label))) ? "on" : "off";
     },
     /** True when keyboard input would land in this control right now. */
     hasFocus(sel) {
@@ -169,6 +171,50 @@
     optionPoint(sel, label) {
       const o = optionEls(sel).find((x) => text(x) === label);
       return o ? center(o) : { x: 0, y: 0, ok: false };
+    },
+    /**
+     * The calendar that belongs to a date box, as the runner needs it to click through: whether it
+     * is open, the month it shows, where its two arrows are, and where each day of that month is.
+     */
+    calendar(sel) {
+      const closed = { open: false, heading: "", prev: { x: 0, y: 0, ok: false }, next: { x: 0, y: 0, ok: false }, days: [] };
+      const el = q(sel);
+      if (!el) return closed;
+      const PICKER = '[class*="date-picker" i], [class*="datepicker" i], [class*="calendar" i], [role=dialog], [role=grid]';
+      const item = el.closest("[variant], [class*=form-item i], [class*=field i]") || el.parentElement;
+      // The pop-up sits in the field itself, or the page draws it at the end of the document.
+      const isDay = (n) => /^\d{1,2}$/.test(text(n));
+      // A calendar is whatever holds a week or more of day numbers. A calendar icon matches the same words and holds none.
+      const holdsDays = (p) => p instanceof HTMLElement && visible(p) && [...p.querySelectorAll("button, td, [role=gridcell]")].filter((n) => visible(n) && isDay(n)).length >= 7;
+      const near = item ? [...item.querySelectorAll(PICKER)].filter(holdsDays) : [];
+      const anywhere = near.length ? near : [...document.querySelectorAll(PICKER)].filter(holdsDays);
+      const pop = anywhere.find((p) => !anywhere.some((o) => o !== p && o.contains(p)));
+      if (!pop) return closed;
+      const MONTH = /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?[\s,]+\d{4}|\d{4}[\s,]+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
+      const OUTSIDE = /not-this-month|outside|other-month|adjacent|prev-month|next-month|disabled|muted/i;
+      const cells = [...pop.querySelectorAll('button, td, [role=gridcell], [class*="day" i]')].filter((n) => visible(n) && isDay(n) && !n.querySelector('button, td, [role=gridcell]'));
+      const days = cells.filter((n) => !OUTSIDE.test(String(n.getAttribute("class") || "")) && n.getAttribute("aria-disabled") !== "true" && !n.disabled);
+      if (!cells.length) return closed;
+      const first = cells[0];
+      const headingEl = [...pop.querySelectorAll("*")].find((n) => n.children.length === 0 && MONTH.test(text(n)) && text(n).length < 30 && (n.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING));
+      // Pickers with a month list and a year box have no single heading: their header's text is read whole.
+      const selects = [...pop.querySelectorAll("select")].filter(visible).map((s2) => text(s2.selectedOptions[0]));
+      const yearBox = [...pop.querySelectorAll('input[type=number], input[class*="year" i]')].filter(visible).map((i) => i.value);
+      const heading = headingEl ? text(headingEl) : [...selects, ...yearBox].join(" ");
+      // The arrows are the buttons above the days that are not days. By name when they are named, else first and last.
+      const arrows = [...pop.querySelectorAll('button, [role=button], a, [class*="nav" i], [class*="arrow" i]')].filter((n) => visible(n) && !isDay(n) && !cells.includes(n) && (n.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING));
+      const named = (re) => arrows.find((n) => re.test(`${n.getAttribute("aria-label") || ""} ${n.getAttribute("class") || ""} ${n.title || ""}`));
+      const prev = named(/prev|back|earlier|left/i) || arrows[0];
+      const next = named(/next|forward|later|right/i) || arrows[arrows.length - 1];
+      // The pop-up is brought into view once, and every point is then read without scrolling again:
+      // points read at different scroll positions would not belong to the same picture.
+      pop.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+      const at = (n) => {
+        if (!n) return { x: 0, y: 0, ok: false };
+        const r = n.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, ok: r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight };
+      };
+      return { open: true, heading, prev: at(prev), next: prev === next ? { x: 0, y: 0, ok: false } : at(next), days: days.map((n) => ({ day: Number(text(n)), ...at(n) })).filter((d) => d.ok) };
     },
     /** Centre of one choice in a button group or a drawn radio row, for a real click. */
     groupOptionPoint(sel, label) {

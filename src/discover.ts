@@ -5,7 +5,7 @@
  */
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { DISCOVER, PATHS } from "./config.js";
+import { DISCOVER, PATHS, CACHE } from "./config.js";
 import { JevClient } from "./jev/client.js";
 import { describe } from "./jobs/describe.js";
 import { preFilter } from "./jobs/hardFilters.js";
@@ -14,8 +14,9 @@ import { dedupe, type Job } from "./jobs/normalize.js";
 import { entryFor, loadQueue, saveQueue, sortEntries, type QueueEntry, type QueueFile } from "./jobs/queue.js";
 import { rateJob, type FitResult } from "./jobs/rate.js";
 import { loadRows, saveRows, upsertEntry } from "./log/csv.js";
-import { connectedHosts } from "./browser/sites.js";
 import { usStatus, type Profile } from "./profile/schema.js";
+import type { Answer } from "./jev/types.js";
+import { KeyedCache } from "./util/cache.js";
 import { fetchAshbyBoard } from "./sources/ats/ashby.js";
 import { fetchGreenhouseBoard } from "./sources/ats/greenhouse.js";
 import { fetchLeverBoard } from "./sources/ats/lever.js";
@@ -46,6 +47,8 @@ export type DiscoverSummary = {
   unique: number;
   preFiltered: number;
   rated: number;
+  /** How many of those ratings came from the cache and cost nothing. */
+  reused: number;
   queued: number;
   belowThreshold: number;
   skippedByJev: number;
@@ -109,14 +112,13 @@ export async function discover(profile: Profile, jev: JevClient, opts: DiscoverO
   const all = await collectJobs({ ...opts, ...(gradYear !== undefined ? { gradYear } : {}) });
   const learned = learnedWalledHosts();
   const us = usStatus(profile);
-  const connected = connectedHosts();
   const collected = all.length;
   log(`[discover] ${collected} unique postings`);
 
   const kept: Job[] = [];
   const entries: QueueEntry[] = [];
   for (const job of all) {
-    const reason = preFilter(job, now, (url) => isWalled(url, learned, connected), us);
+    const reason = preFilter(job, now, (url) => isWalled(url, learned), us);
     if (reason) entries.push(entryFor(job, null, reason, prevById.get(job.id)));
     else kept.push(job);
   }
@@ -138,12 +140,14 @@ export async function discover(profile: Profile, jev: JevClient, opts: DiscoverO
 
   log(`[discover] rating ${ready.length} with JEV`);
   let done = 0;
+  const ratings = CACHE.ratings ? new KeyedCache<Record<string, Answer>>(PATHS.ratings) : undefined;
   const rated = await mapLimit(ready, DISCOVER.rateConcurrency, async (j) => {
-    const fit = await rateJob(jev, j, profile, now);
+    const fit = await rateJob(jev, j, profile, now, ratings);
     done++;
     if (done % 25 === 0) log(`[discover] rated ${done}/${ready.length} (spend $${jev.usage.costUsd.toFixed(4)})`);
     return fit;
   });
+  ratings?.save();
   let ratedCount = 0;
   rated.forEach((r, i) => {
     const job = ready[i] as Job;
@@ -170,6 +174,7 @@ export async function discover(profile: Profile, jev: JevClient, opts: DiscoverO
     unique: all.length,
     preFiltered: all.length - kept.length,
     rated: ratedCount,
+    reused: ratings?.hits ?? 0,
     queued: queue.entries.filter((e) => e.status === "queued").length,
     belowThreshold: queue.entries.filter((e) => e.fit?.decision === "below_threshold").length,
     skippedByJev: queue.entries.filter((e) => e.fit?.decision === "skip").length,
