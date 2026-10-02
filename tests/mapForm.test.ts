@@ -232,5 +232,9 @@ describe("which document a file box asks for", () => {
   it("never takes a transcript box for the resume, even when both words appear", () => {
     expect(fileBoxWants(box("Upload your transcript (not your resume)"))).toBe("transcript");
   });
+  it("tells a graduate transcript box from the undergraduate one", () => {
+    expect(fileBoxWants(box("If applicable, please provide a recent transcript of your graduate studies (Attach)"))).toBe("graduate_transcript");
+    expect(fileBoxWants(box("Please provide a transcript of your undergraduate studies"))).toBe("transcript");
+  });
 });
 

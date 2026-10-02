@@ -230,8 +230,8 @@ export function isSlotChoice(f: DumpedField): boolean {
   return SLOT_LABEL.test(f.label) && f.options.filter((o) => SLOT_OPTION.test(o.label)).length >= 2;
 }
 
-/** Typing a name to sign an agreement is the candidate's act, not the tool's. */
-const SIGNATURE_LABEL = /\bNDA\b|non-?disclosure|arbitration agreement|e-?signature|electronic signature|(typ(e|ing)|enter(ing)?) your (full |legal )*name/i;
+/** Typing a name to sign an agreement is the candidate's act, not the tool's. An NDA is theirs to read first, whatever the box looks like. */
+const SIGNATURE_LABEL = /\bNDA\b|non-?disclosure|e-?signature|electronic signature|(typ(e|ing)|enter(ing)?) your (full |legal )*name/i;
 
 let plans: KeyedCache<FillPlan> | null = null;
 
@@ -290,12 +290,14 @@ async function mapFormFresh(jev: JevClient, profile: Profile, job: Job, dump: Fi
   const unnamedResume = wants.includes("resume") ? -1 : wants.indexOf("unnamed");
   fileBoxes.forEach((f, i) => {
     const want = i === unnamedResume ? "resume" : wants[i];
-    const file = want === "resume" ? profile.resume.path : want === "transcript" ? (profile.transcript?.path ?? null) : null;
+    // The one transcript on file is the undergraduate one unless the profile holds a graduate degree.
+    const graduate = profile.education.some((e) => /master|\bm\.?sc?\b|\bmba\b|ph\.?d|doctor/i.test(e.degree));
+    const file = want === "resume" ? profile.resume.path : want === "transcript" || (want === "graduate_transcript" && graduate) ? (profile.transcript?.path ?? null) : null;
     planned.push({
       id: f.id, selector: f.selector, kind: f.kind, label: f.label, required: f.required,
       action: file ? "upload" : "skip", key: want === "resume" ? "resume_upload" : "leave_blank",
       value: file, optionLabel: null, confidence: 1,
-      note: file ? null : want === "autofill" ? "autofill helper, skipped so it does not overwrite the plan" : want === "transcript" ? "asks for a transcript. Set transcript.path in your profile to attach one" : "not a resume upload",
+      note: file ? null : want === "autofill" ? "autofill helper, skipped so it does not overwrite the plan" : want === "transcript" ? "asks for a transcript. Set transcript.path in your profile to attach one" : want === "graduate_transcript" ? "asks for a graduate transcript, and the profile has no graduate degree" : "not a resume upload",
     });
   });
   const ordered = dump.fields.map((f) => planned.find((p) => p.id === f.id) as PlannedField);
@@ -394,10 +396,10 @@ export function planField(f: DumpedField, answer: Answer | undefined, profile: P
 }
 
 /** Which document a file box asks for, from its question, its name and its hint. The resume is never put in a box that asks for something else. */
-export function fileBoxWants(f: Pick<DumpedField, "label" | "name" | "hint" | "selector">): "resume" | "transcript" | "autofill" | "other" | "unnamed" {
+export function fileBoxWants(f: Pick<DumpedField, "label" | "name" | "hint" | "selector">): "resume" | "transcript" | "graduate_transcript" | "autofill" | "other" | "unnamed" {
   const text = `${f.label} ${f.name} ${f.hint} ${f.selector}`;
   if (/autofill|auto-fill|parse|prefill/i.test(text)) return "autofill";
-  if (/transcript/i.test(text)) return "transcript";
+  if (/transcript/i.test(text)) return /\b(graduate|master|phd|doctoral)\b/i.test(text) && !/undergraduate/i.test(text) ? "graduate_transcript" : "transcript";
   if (/resume|résumé|\bcv\b|curriculum/i.test(text)) return "resume";
   if (/cover|letter|portfolio|photo|picture|certificate|writing sample|work sample|reference|other|additional/i.test(text)) return "other";
   return "unnamed";

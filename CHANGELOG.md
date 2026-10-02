@@ -71,6 +71,11 @@ Keep a Changelog and the project uses Conventional Commits.
   day. Its jobs stay in the queue.
 - A cookie banner that lies over Submit is answered with its most private
   choice (necessary cookies only, or reject). The tool never accepts all.
+- A checkbox that acknowledges an agreement, a notice or terms follows the
+  person's standing answers. Typing a name to sign, and any NDA, stay the
+  person's to do.
+- A box that asks for a graduate transcript gets the transcript only when
+  the profile holds a graduate degree.
 - A "confirm you are not a robot" check after Submit (BambooHR) is left
   for the person like an emailed code: the form stays open, `codes` shows
   it, and the site's other jobs wait for another day.
