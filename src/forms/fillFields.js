@@ -1,10 +1,11 @@
-// Runs inside the page through Claude in Chrome's javascript tool.
-// Applies a fill plan produced by `applywithjev map-form`. Before running,
-// replace the placeholder token on the first line of code (two underscores,
-// PLAN, two underscores) with the JSON array from plan.fills. Returns a JSON report.
-(() => {
-  const fills = __PLAN__;
+// Runs inside the page. A function, called by the fill runner with the fills
+// of a plan produced by mapForm: [{ selector, kind, value }]. Returns a JSON
+// report of what was applied and what failed. To use it by hand in a browser
+// console, wrap it in parentheses and call it with the array.
+(fills) => {
   const report = { applied: [], failed: [] };
+  // An attribute value inside a quoted CSS selector: backslashes and quotes escaped.
+  const attr = (v) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   const setNative = (el, value) => {
     const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
     const desc = Object.getOwnPropertyDescriptor(proto, "value");
@@ -32,7 +33,7 @@
         btn.click();
       } else if (f.kind === "radio") {
         const name = el.name;
-        const group = name ? document.querySelectorAll(`input[type=radio][name="${name.replace(/"/g, '\\"')}"]`) : [el];
+        const group = name ? document.querySelectorAll(`input[type=radio][name="${attr(name)}"]`) : [el];
         const labelOf = (r) => { const l = (r.id && document.querySelector(`label[for="${CSS.escape(r.id)}"]`)) || r.closest("label") || r.parentElement; return norm(l && (l.innerText || l.textContent)); };
         let target = [...group].find((r) => labelOf(r) === norm(f.value));
         if (!target) target = [...group].find((r) => labelOf(r).includes(norm(f.value)));
@@ -74,4 +75,4 @@
     }
   }
   return JSON.stringify(report);
-})();
+};

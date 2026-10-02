@@ -145,7 +145,7 @@ export class Page {
     });
   }
 
-  /** Evaluates an expression in the page and returns its JSON value. */
+  /** Evaluates a fixed expression in the page and returns its JSON value. For anything with a value in it, use call. */
   async evaluate<T>(expression: string): Promise<T> {
     const r = await this.send<{ result: { value: T }; exceptionDetails?: { text: string; exception?: { description?: string } } }>("Runtime.evaluate", {
       expression,
@@ -154,6 +154,28 @@ export class Page {
     });
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
     return r.result.value;
+  }
+
+  /**
+   * Calls a function in the page with JSON arguments. Values travel as arguments, never spliced
+   * into source text, so nothing read from a page or a file can become code.
+   */
+  async call<T>(fn: string, ...args: unknown[]): Promise<T> {
+    const root = await this.send<{ result: { objectId: string } }>("Runtime.evaluate", { expression: "globalThis" });
+    const r = await this.send<{ result: { value: T }; exceptionDetails?: { text: string; exception?: { description?: string } } }>("Runtime.callFunctionOn", {
+      functionDeclaration: fn,
+      objectId: root.result.objectId,
+      arguments: args.map((value) => ({ value })),
+      returnByValue: true,
+      awaitPromise: true,
+    });
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+    return r.result.value;
+  }
+
+  /** Calls one of the helpers that pageHelpers.js installs on the page. */
+  awj<T>(method: string, ...args: unknown[]): Promise<T> {
+    return this.call<T>("function (method, ...args) { return window.__awj[method](...args); }", method, ...args);
   }
 
   async navigate(url: string): Promise<void> {

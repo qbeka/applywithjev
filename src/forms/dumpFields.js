@@ -20,6 +20,8 @@
     return true;
   };
   const text = (el) => (el ? (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim() : "");
+  // An attribute value inside a quoted CSS selector: backslashes and quotes escaped.
+  const attr = (v) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   const cssEscape = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/([^\w-])/g, "\\$1"));
   const unique = (s) => { try { return document.querySelectorAll(s).length === 1; } catch { return false; } };
   // Ids a UI library numbers on each render (FabricTextField-349, :r1:, radix-12) can change under us, so they are not used to find a field again.
@@ -30,7 +32,7 @@
     if (stableId(el.id)) return "#" + cssEscape(el.id);
     const tag = el.tagName.toLowerCase();
     if (el.name) {
-      const s = `${tag}[name="${el.name.replace(/"/g, '\\"')}"]`;
+      const s = `${tag}[name="${attr(el.name)}"]`;
       if (unique(s) || el.type === "radio") return s;
     }
     // Walk up until the path names exactly one element: two fields must never share a selector.
@@ -167,7 +169,7 @@
       const key = el.name || f.selector;
       if (seenRadio.has(key)) { i--; return; }
       seenRadio.add(key);
-      const group = el.name ? document.querySelectorAll(`input[type=radio][name="${el.name.replace(/"/g, '\\"')}"]`) : [el];
+      const group = el.name ? document.querySelectorAll(`input[type=radio][name="${attr(el.name)}"]`) : [el];
       group.forEach((r) => {
         const l = (r.id && document.querySelector(`label[for="${cssEscape(r.id)}"]`)) || r.closest("label");
         f.options.push({ value: r.value, label: text(l) || r.value });

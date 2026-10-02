@@ -20,7 +20,7 @@ import { decidePageState } from "./forms/pageState.js";
 import { FieldsDump } from "./forms/fields.js";
 import { ensureBrowser } from "./browser/cdp.js";
 import { closeJobTab, fillJob, inspect, loadReport, resolveJob, setValues, submitJob, type Fill, type FillReport } from "./browser/formRunner.js";
-import type { Job } from "./jobs/normalize.js";
+import { hostIs, type Job } from "./jobs/normalize.js";
 import { rememberWalledHost } from "./jobs/walled.js";
 import { logLines } from "./answers/resolve.js";
 
@@ -408,7 +408,7 @@ async function paced<T, R>(items: T[], host: (item: T) => string, work: (item: T
       const now = Date.now();
       const at = todo.findIndex(({ item }) => {
         const s = sites.get(host(item));
-        const gentle = RUN.gentleHosts.some((h) => host(item).includes(h));
+        const gentle = RUN.gentleHosts.some((h) => hostIs(host(item), h));
         return !s || (s.active < (gentle ? 1 : RUN.perHostConcurrency) && now - s.last >= (gentle ? RUN.gentleGapMs : RUN.hostGapMs));
       });
       if (at < 0) {

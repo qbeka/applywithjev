@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ageDays, atsFromUrl, canonicalUrl, dedupe, jobId, parseLooseDate, postingKey, type Job } from "../src/jobs/normalize.js";
+import { ageDays, atsFromUrl, canonicalUrl, dedupe, hostIs, jobId, parseLooseDate, postingKey, type Job } from "../src/jobs/normalize.js";
 
 describe("postingKey", () => {
   it("gives one id to every way a list links the same posting", () => {
@@ -16,6 +16,17 @@ describe("postingKey", () => {
     expect(postingKey("https://www.pinterestcareers.com/jobs/?gh_jid=8138049")).not.toBe(postingKey("https://www.pinterestcareers.com/jobs/?gh_jid=7838591"));
     expect(postingKey("https://example.com/careers/42")).toBe("https://example.com/careers/42");
     expect(atsFromUrl("https://careers.example.com/jobs/5150?icims=1")).toBe("icims");
+  });
+});
+
+describe("hostIs", () => {
+  it("matches a domain and its subdomains, and nothing that merely contains it", () => {
+    expect(hostIs("job-boards.greenhouse.io", "greenhouse.io")).toBe(true);
+    expect(hostIs("greenhouse.io", "greenhouse.io")).toBe(true);
+    expect(hostIs("greenhouse.io.example.com", "greenhouse.io")).toBe(false);
+    expect(hostIs("notgreenhouse.io", "greenhouse.io")).toBe(false);
+    expect(atsFromUrl("https://greenhouse.io.example.com/jobs/1")).toBe("other");
+    expect(atsFromUrl("https://acme.wd5.myworkdayjobs.com/x")).toBe("workday");
   });
 });
 

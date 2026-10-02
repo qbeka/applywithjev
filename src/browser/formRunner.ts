@@ -20,6 +20,9 @@ import { closeTab, ensureBrowser, listTargets, newTab, Page, sleep } from "./cdp
 const script = (name: string) => readFileSync(path.join(PATHS.browserScripts, name), "utf8");
 const SESSION = path.join(PATHS.runs, "browser-session.json");
 
+/** The text of a button that leads from a posting to its form. */
+const APPLY_BUTTON = "^\\s*(apply|apply now|apply for this job|apply to this job|apply for this position|start application|i'm interested)\\s*$";
+
 type Session = Record<string, { targetId: string; url: string }>;
 type Point = { x: number; y: number; ok: boolean };
 export type Fill = { selector: string; kind: string; value: string };
@@ -63,7 +66,6 @@ const saveSession = (s: Session) => {
   mkdirSync(PATHS.runs, { recursive: true });
   writeFileSync(SESSION, JSON.stringify(s, null, 2));
 };
-const js = (v: unknown) => JSON.stringify(v);
 /** Step timings on stderr when AWJ_TRACE is set. */
 const trace = (line: string) => {
   if (process.env.AWJ_TRACE) console.error(`[fill] ${line}`);
@@ -83,7 +85,8 @@ async function settle(page: Page): Promise<void> {
     await sleep(BROWSER.pollMs);
     let n = -1;
     try {
-      n = await page.evaluate<number>("document.readyState === 'complete' ? document.querySelectorAll('input, select, textarea').length : -1");
+      // "interactive" is enough: a tracker or a font that never finishes loading must not hold the form up.
+      n = await page.evaluate<number>("document.readyState !== 'loading' ? document.querySelectorAll('input, select, textarea').length : -1");
     } catch {
       n = -1; // mid-navigation
     }
@@ -91,6 +94,7 @@ async function settle(page: Page): Promise<void> {
     last = n;
     if (stable >= 3 && (n >= 3 || Date.now() - started > BROWSER.emptyPageMs)) break;
   }
+  trace(`settled in ${Date.now() - started}ms with ${last} controls`);
 }
 
 async function dump(page: Page): Promise<FieldsDump> {
@@ -112,7 +116,7 @@ async function openForm(page: Page, url: string): Promise<FieldsDump> {
     if (frame) {
       await goto(page, frame);
     } else {
-      const p = await page.evaluate<Point>(`window.__awj.clickByText(${js("^\\s*(apply|apply now|apply for this job|apply to this job|apply for this position|start application|i'm interested)\\s*$")})`);
+      const p = await page.awj<Point>("clickByText", APPLY_BUTTON);
       if (!p.ok) break;
       await page.click(p.x, p.y);
       await settle(page);
@@ -132,7 +136,7 @@ async function waitOptions(page: Page, selector: string, typed: boolean, enough?
   let opts: string[] = [];
   while (Date.now() < deadline) {
     await sleep(BROWSER.pollMs);
-    opts = clean(await page.evaluate<string[]>(`window.__awj.options(${js(selector)})`));
+    opts = clean(await page.awj<string[]>("options", selector));
     if (enough) {
       if (enough(opts)) break;
       continue;
@@ -171,7 +175,7 @@ export function pickOption(options: string[], value: string, hints: string[]): s
 }
 
 async function openDropdown(page: Page, selector: string): Promise<boolean> {
-  const p = await page.evaluate<Point>(`window.__awj.point(${js(selector)})`);
+  const p = await page.awj<Point>("point", selector);
   if (!p.ok) return false;
   await page.click(p.x, p.y);
   return true;
@@ -184,21 +188,21 @@ async function closeDropdown(page: Page): Promise<void> {
 
 /** Reads the options of one dropdown that only renders them once opened. */
 async function readOptions(page: Page, selector: string): Promise<string[]> {
-  const react = () => page.evaluate<string[] | null>(`window.__awj.reactOptions(${js(selector)})`);
+  const react = () => page.awj<string[] | null>("reactOptions", selector);
   const opts = await react();
   if (opts?.length) return opts;
   if (opts !== null) {
     // A react-select with a lazy list: ask its own loader, or open it through its handler and watch.
-    const viaLoader = await page.evaluate<string[] | null>(`window.__awj.reactLoad(${js(selector)}, "")`).catch(() => null);
+    const viaLoader = await page.awj<string[] | null>("reactLoad", selector, "").catch(() => null);
     if (viaLoader?.length) return viaLoader;
-    if (!(await page.evaluate<boolean>(`window.__awj.reactMenu(${js(selector)}, true)`))) return [];
+    if (!(await page.awj<boolean>("reactMenu", selector, true))) return [];
     const deadline = Date.now() + BROWSER.optionsMs / 2;
     let loaded: string[] = [];
     while (!loaded.length && Date.now() < deadline) {
       await sleep(BROWSER.pollMs);
       loaded = (await react()) ?? [];
     }
-    await page.evaluate(`window.__awj.reactMenu(${js(selector)}, false)`);
+    await page.awj("reactMenu", selector, false);
     return loaded;
   }
   return inFront(page, async () => {
@@ -223,24 +227,24 @@ async function readDropdownOptions(page: Page, fields: DumpedField[]): Promise<v
 
 /** Sets a react-select through its own handler: no clicks, no waiting on menus. Null when it cannot. */
 async function fillDropdownDirect(page: Page, selector: string, value: string, hints: string[]): Promise<boolean | null> {
-  const read = () => page.evaluate<string[] | null>(`window.__awj.reactOptions(${js(selector)})`);
+  const read = () => page.awj<string[] | null>("reactOptions", selector);
   let opts = await read();
   if (opts === null) return null;
   let choice = pickOption(opts, value, hints);
   if (!choice) {
     // A paginated list answers a search through its own loader in one round trip.
-    const found = await page.evaluate<string[] | null>(`window.__awj.reactLoad(${js(selector)}, ${js(value)})`).catch(() => null);
+    const found = await page.awj<string[] | null>("reactLoad", selector, value).catch(() => null);
     choice = found ? pickOption(found, value, hints) : null;
   }
   if (!choice) {
     // A search-as-you-type list only loads while its menu counts as open, and it has to see that before the search text arrives.
-    await page.evaluate(`window.__awj.reactMenu(${js(selector)}, true)`);
+    await page.awj("reactMenu", selector, true);
     await sleep(BROWSER.pollMs);
   }
   // A place is searched by its city first; anything else by the full value.
   const head = value.split(",")[0]?.trim() ?? "";
   for (const typed of choice ? [] : [...new Set(head && head !== value ? [head, value] : [value])]) {
-    if (!(await page.evaluate<boolean>(`window.__awj.reactSearch(${js(selector)}, ${js(typed)})`))) break;
+    if (!(await page.awj<boolean>("reactSearch", selector, typed))) break;
     const begun = Date.now();
     let asked = 1;
     while (!choice && Date.now() - begun < BROWSER.optionsMs) {
@@ -250,16 +254,16 @@ async function fillDropdownDirect(page: Page, selector: string, value: string, h
       // A search sent while the component was still mounting is dropped, so ask once more halfway through.
       if (!choice && !opts.length && asked === 1 && Date.now() - begun > BROWSER.optionsMs / 2) {
         asked = 2;
-        await page.evaluate(`window.__awj.reactSearch(${js(selector)}, ${js(typed)})`);
+        await page.awj("reactSearch", selector, typed);
       }
     }
     if (choice) break;
     // Leave the search box empty again, so a fallback that types starts clean.
-    await page.evaluate(`window.__awj.reactSearch(${js(selector)}, "")`);
+    await page.awj("reactSearch", selector, "");
   }
-  if (!choice) await page.evaluate(`window.__awj.reactMenu(${js(selector)}, false)`);
+  if (!choice) await page.awj("reactMenu", selector, false);
   if (!choice) return false;
-  return page.evaluate<boolean>(`window.__awj.reactSelect(${js(selector)}, ${js(choice)})`);
+  return page.awj<boolean>("reactSelect", selector, choice);
 }
 
 async function fillDropdown(page: Page, selector: string, value: string, hints: string[]): Promise<string | null> {
@@ -307,7 +311,7 @@ async function clickAndPick(page: Page, selector: string, value: string, hints: 
     await closeDropdown(page);
     return `no option matches "${value}"${opts.length ? ` among: ${opts.slice(0, 12).join(" | ")}` : ""}`;
   }
-  const p = await page.evaluate<Point>(`window.__awj.optionPoint(${js(selector)}, ${js(choice)})`);
+  const p = await page.awj<Point>("optionPoint", selector, choice);
   if (!p.ok) {
     await closeDropdown(page);
     return `option "${choice}" could not be clicked`;
@@ -321,10 +325,11 @@ async function clickAndPick(page: Page, selector: string, value: string, hints: 
 export async function applyFills(page: Page, fills: Fill[], profile: Profile): Promise<{ selector: string; why: string }[]> {
   const failed: { selector: string; why: string }[] = [];
   const hints = [profile.address.city, profile.address.region, profile.address.regionCode, profile.address.country];
-  const fillScript = script("fillFields.js");
+  // fillFields.js is a function expression under a comment header; the protocol wants the bare expression.
+  const fillScript = script("fillFields.js").replace(/^(\s*\/\/.*\n)+/, "").trim().replace(/;$/, "");
   const setFields = async (some: Fill[]) => {
     if (!some.length) return;
-    const report = JSON.parse(await page.evaluate<string>(fillScript.replace("const fills = __PLAN__;", `const fills = ${js(some)};`))) as { failed: { selector: string; why: string }[] };
+    const report = JSON.parse(await page.call<string>(fillScript, some)) as { failed: { selector: string; why: string }[] };
     for (const f of report.failed) if (!failed.some((x) => x.selector === f.selector)) failed.push(f);
   };
   const simple = fills.filter((f) => f.kind !== "combobox");
@@ -398,21 +403,21 @@ const TYPED_KINDS = new Set(["text", "email", "tel", "url", "number", "textarea"
 
 type ControlState = "on" | "off" | "missing";
 function controlStates(page: Page, selectors: string[]): Promise<ControlState[]> {
-  return page.evaluate<ControlState[]>(`${js(selectors)}.map((s) => window.__awj.state(s))`);
+  return page.call<ControlState[]>("(selectors) => selectors.map((s) => window.__awj.state(s))", selectors);
 }
 
 function shownValues(page: Page, selectors: string[]): Promise<string[]> {
-  return page.evaluate<string[]>(`${js(selectors)}.map((s) => { try { return window.__awj.shown(s); } catch { return ""; } })`);
+  return page.call<string[]>('(selectors) => selectors.map((s) => { try { return window.__awj.shown(s); } catch { return ""; } })', selectors);
 }
 
 /** Types into a field with real key input, for the rare control that ignores a value set from script. */
 function typeInto(page: Page, selector: string, value: string): Promise<string | null> {
   return inFront(page, async () => {
-    const p = await page.evaluate<Point>(`window.__awj.point(${js(selector)})`);
+    const p = await page.awj<Point>("point", selector);
     if (!p.ok) return "control not found";
     await page.click(p.x, p.y);
     // Keys go wherever the focus is, so no focus on this exact control means no typing.
-    if (!(await page.evaluate<boolean>(`window.__awj.hasFocus(${js(selector)})`))) return "could not focus the control";
+    if (!(await page.awj<boolean>("hasFocus", selector))) return "could not focus the control";
     await page.evaluate("window.__awj.selectAll()");
     await page.type(value);
     await page.evaluate("window.__awj.blur()");
@@ -496,7 +501,7 @@ export function closestOptions(options: string[], wanted: string, limit: number)
 async function candidateOptions(page: Page, selector: string, wanted: string): Promise<string[]> {
   const found = new Set(await readOptions(page, selector));
   for (const word of norm(wanted).split(/[^a-z0-9]+/).filter((w) => w.length >= 4)) {
-    const more = await page.evaluate<string[] | null>(`window.__awj.reactLoad(${js(selector)}, ${js(word.slice(0, 6))})`).catch(() => null);
+    const more = await page.awj<string[] | null>("reactLoad", selector, word.slice(0, 6)).catch(() => null);
     for (const o of more ?? []) found.add(o);
   }
   return [...found];
@@ -568,7 +573,7 @@ async function uploadFile(page: Page, selector: string, file: string): Promise<s
 async function waitForFile(page: Page, name: string): Promise<boolean> {
   const deadline = Date.now() + BROWSER.optionsMs * 2;
   while (Date.now() < deadline) {
-    if (await page.evaluate<boolean>(`window.__awj.showsFile(${js(name)})`)) return true;
+    if (await page.awj<boolean>("showsFile", name)) return true;
     await sleep(BROWSER.pollMs);
   }
   return false;
@@ -670,7 +675,7 @@ export async function setValues(profile: Profile, jobId: string, fills: Fill[]):
   const page = await pageFor(jobId);
   try {
     const failed = await applyFills(page, fills, profile);
-    const values = await page.evaluate<string[]>(`${js(fills.map((f) => f.selector))}.map((s) => window.__awj.shown(s))`);
+    const values = await shownValues(page, fills.map((f) => f.selector));
     return { failed, shown: Object.fromEntries(fills.map((f, i) => [f.selector, values[i] ?? ""])) };
   } finally {
     page.close();
@@ -710,7 +715,7 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
     await page.bringToFront();
     await page.writesSettled(BROWSER.saveMs);
     const before = await page.evaluate<string>("window.__awj.pageText()");
-    const p = await page.evaluate<Point>(`(() => { const el = document.querySelector(${js(pick.selector)}); if (!el) return { x: 0, y: 0, ok: false }; el.scrollIntoView({ block: "center", behavior: "instant" }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, ok: r.width > 0 }; })()`);
+    const p = await page.awj<Point>("point", pick.selector);
     if (!p.ok) throw new Error(`Submit control ${pick.selector} is not on the page.`);
     await page.click(p.x, p.y);
     const deadline = Date.now() + BROWSER.submitMs;

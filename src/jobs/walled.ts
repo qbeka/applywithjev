@@ -8,6 +8,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { DISCOVER, PATHS } from "../config.js";
+import { hostIs } from "./normalize.js";
+
+const SHARED_BOARDS = ["greenhouse.io", "lever.co", "ashbyhq.com", "rippling.com", "bamboohr.com", "smartrecruiters.com", "jobvite.com"];
 
 const hostOf = (url: string): string => {
   try {
@@ -30,13 +33,13 @@ export function learnedWalledHosts(file = PATHS.walledHosts): string[] {
 export function isWalled(url: string, learned: string[] = learnedWalledHosts()): boolean {
   const host = hostOf(url);
   if (!host) return false;
-  return DISCOVER.accountWalledHosts.some((h) => host.includes(h)) || learned.includes(host);
+  return DISCOVER.accountWalledHosts.some((h) => hostIs(host, h)) || learned.includes(host);
 }
 
 /** Records the site of a job that turned out to need a login. The big ATS hosts are never recorded: one company's settings say nothing about the rest. */
 export function rememberWalledHost(url: string, file = PATHS.walledHosts): void {
   const host = hostOf(url);
-  if (!host || /greenhouse\.io|lever\.co|ashbyhq\.com|rippling\.com|bamboohr\.com|smartrecruiters\.com|jobvite\.com/.test(host)) return;
+  if (!host || SHARED_BOARDS.some((d) => hostIs(host, d))) return;
   const hosts = learnedWalledHosts(file);
   if (hosts.includes(host)) return;
   mkdirSync(path.dirname(file), { recursive: true });

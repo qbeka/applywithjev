@@ -9,7 +9,7 @@ import { z } from "zod";
 import { PATHS } from "../config.js";
 import { Answer } from "../jev/types.js";
 import type { FitResult } from "./rate.js";
-import type { Job } from "./normalize.js";
+import { jobId, type Job } from "./normalize.js";
 
 export const QueueStatus = z.enum(["queued", "in_progress", "applied", "skipped", "failed", "blocked", "needs_review"]);
 export type QueueStatus = z.infer<typeof QueueStatus>;
@@ -66,6 +66,9 @@ export function loadQueue(file = PATHS.queue): QueueFile {
   if (!existsSync(file)) return { version: 1, generatedAt: new Date().toISOString(), entries: [] };
   const parsed = QueueFile.safeParse(JSON.parse(readFileSync(file, "utf8")));
   if (!parsed.success) throw new Error(`${file} is corrupt: ${parsed.error.message}`);
+  // An id is derived from the posting, so it is recomputed on load: a queue written by an older
+  // version keeps every status, and an applied job can never come back as a new one.
+  for (const e of parsed.data.entries) e.job.id = jobId(e.job.url);
   return parsed.data;
 }
 

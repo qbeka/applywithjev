@@ -3,6 +3,8 @@
 // runner cannot do with real input events. Nothing here is page-supplied code.
 (() => {
   const q = (s) => document.querySelector(s);
+  // An attribute value inside a quoted CSS selector: backslashes and quotes escaped.
+  const attr = (v) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   const text = (el) => (el ? (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim() : "");
   const visible = (el) => {
     if (!el || !el.isConnected) return false;
@@ -155,7 +157,7 @@
       if (!el) return "";
       if (el.type === "checkbox" || el.type === "radio") {
         if (el.type === "radio" && el.name) {
-          const on = [...document.querySelectorAll(`input[type=radio][name="${el.name.replace(/"/g, '\\"')}"]`)].find((r) => r.checked);
+          const on = [...document.querySelectorAll(`input[type=radio][name="${attr(el.name)}"]`)].find((r) => r.checked);
           return on ? text(on.closest("label") || (on.id && document.querySelector(`label[for="${CSS.escape(on.id)}"]`)) || on.parentElement) || on.value : "";
         }
         return el.checked ? "checked" : "";
@@ -200,7 +202,7 @@
       return document.body ? document.body.innerText : "";
     },
     controlCount() {
-      return document.readyState === "complete" ? document.querySelectorAll("input, select, textarea").length : -1;
+      return document.readyState !== "loading" ? document.querySelectorAll("input, select, textarea").length : -1;
     },
     clickByText(pattern) {
       const re = new RegExp(pattern, "i");

@@ -29,7 +29,12 @@ export type Job = {
 };
 
 export function jobId(url: string): string {
-  return createHash("sha1").update(postingKey(url)).digest("hex").slice(0, 16);
+  return createHash("sha256").update(postingKey(url)).digest("hex").slice(0, 16);
+}
+
+/** True when host is the domain itself or one of its subdomains. A substring test would also match evil-greenhouse.io.example.com. */
+export function hostIs(host: string, domain: string): boolean {
+  return host === domain || host.endsWith(`.${domain}`);
 }
 
 /**
@@ -46,11 +51,11 @@ export function postingKey(raw: string): string {
     return url;
   }
   const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(url)?.[0]?.toLowerCase();
-  if (/(^|\.)ashbyhq\.com$/.test(host) && uuid) return `ashby:${uuid}`;
-  if (/(^|\.)lever\.co$/.test(host) && uuid) return `lever:${uuid}`;
-  const gh = /[?&](?:gh_jid|token)=(\d+)/.exec(url)?.[1] ?? (host.includes("greenhouse.io") ? /\/jobs\/(\d+)/.exec(url)?.[1] : undefined);
+  if (hostIs(host, "ashbyhq.com") && uuid) return `ashby:${uuid}`;
+  if (hostIs(host, "lever.co") && uuid) return `lever:${uuid}`;
+  const gh = /[?&](?:gh_jid|token)=(\d+)/.exec(url)?.[1] ?? (hostIs(host, "greenhouse.io") ? /\/jobs\/(\d+)/.exec(url)?.[1] : undefined);
   // Greenhouse numbers its EU and US postings separately.
-  if (gh) return `greenhouse${host.includes(".eu.") ? "-eu" : ""}:${gh}`;
+  if (gh) return `greenhouse${hostIs(host, "eu.greenhouse.io") ? "-eu" : ""}:${gh}`;
   return url;
 }
 
@@ -63,8 +68,8 @@ export function canonicalUrl(raw: string): string {
     for (const k of drop) u.searchParams.delete(k);
     u.hostname = u.hostname.toLowerCase();
     // A posting and its own form page are one job: Ashby adds /application, Lever adds /apply.
-    if (/(^|\.)ashbyhq\.com$/.test(u.hostname)) u.pathname = u.pathname.replace(/\/application\/?$/, "");
-    if (/(^|\.)lever\.co$/.test(u.hostname)) u.pathname = u.pathname.replace(/\/apply\/?$/, "");
+    if (hostIs(u.hostname, "ashbyhq.com")) u.pathname = u.pathname.replace(/\/application\/?$/, "");
+    if (hostIs(u.hostname, "lever.co")) u.pathname = u.pathname.replace(/\/apply\/?$/, "");
     let s = u.toString();
     if (s.endsWith("/")) s = s.slice(0, -1);
     return s;
@@ -82,20 +87,21 @@ export function atsFromUrl(url: string): Ats {
     }
   })();
   const u = url.toLowerCase();
-  if (h.includes("greenhouse.io") || /[?&]gh_jid=/.test(u)) return "greenhouse";
-  if (h.includes("lever.co")) return "lever";
-  if (h.includes("ashbyhq.com")) return "ashby";
-  if (h.includes("myworkdayjobs.com") || h.includes("workday.com") || h.includes("wd1.") || h.includes("wd3.") || h.includes("wd5.")) return "workday";
-  if (h.includes("icims.com") || /[?&]icims=1\b/.test(u)) return "icims";
-  if (h.includes("smartrecruiters.com")) return "smartrecruiters";
-  if (h.includes("jobvite.com")) return "jobvite";
-  if (h.includes("rippling.com")) return "rippling";
-  if (h.includes("bamboohr.com")) return "bamboohr";
-  if (h.includes("taleo.net")) return "taleo";
-  if (h.includes("oraclecloud.com")) return "oracle";
-  if (h.includes("successfactors.com") || h.includes("jobs.sap.com")) return "successfactors";
-  if (h.includes("linkedin.com")) return "linkedin";
-  if (h.includes("amazon.jobs")) return "amazon";
+  const on = (...domains: string[]) => domains.some((d) => hostIs(h, d));
+  if (on("greenhouse.io") || /[?&]gh_jid=/.test(u)) return "greenhouse";
+  if (on("lever.co")) return "lever";
+  if (on("ashbyhq.com")) return "ashby";
+  if (on("myworkdayjobs.com", "workday.com") || /(^|\.)wd\d+\./.test(h)) return "workday";
+  if (on("icims.com") || /[?&]icims=1\b/.test(u)) return "icims";
+  if (on("smartrecruiters.com")) return "smartrecruiters";
+  if (on("jobvite.com")) return "jobvite";
+  if (on("rippling.com")) return "rippling";
+  if (on("bamboohr.com")) return "bamboohr";
+  if (on("taleo.net")) return "taleo";
+  if (on("oraclecloud.com")) return "oracle";
+  if (on("successfactors.com", "jobs.sap.com")) return "successfactors";
+  if (on("linkedin.com")) return "linkedin";
+  if (on("amazon.jobs")) return "amazon";
   return "other";
 }
 
