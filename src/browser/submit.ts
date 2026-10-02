@@ -12,7 +12,7 @@ import type { FillPlan } from "../forms/fields.js";
 import { controlStates, dump, inFront, install, pageFor, shownValues, type Point } from "./session.js";
 
 /** Clicks the form's Submit control and reports what the page became. */
-export async function submitJob(jev: JevClient, jobId: string, force = false): Promise<{ state: PageState["state"]; confidence: number; url: string; errors: string[]; needsCode: boolean; humanCheck: boolean; excerpt: string }> {
+export async function submitJob(jev: JevClient, jobId: string, force = false): Promise<{ state: PageState["state"]; confidence: number; url: string; errors: string[]; needsCode: boolean; humanCheck: boolean; refused: boolean; excerpt: string }> {
   const r = loadReport(jobId);
   if (!r.ready && !force) throw new Error(`not ready to submit: ${r.resolution?.reason || [...r.missingRequired.map((l) => `empty: ${l.slice(0, 50)}`), ...r.failed.map((f) => `failed: ${f.label.slice(0, 50)}`), ...r.reviews.map((x) => `review: ${x.label.slice(0, 50)}`), ...r.drafts.map((x) => `draft: ${x.label.slice(0, 50)}`)].join("; ") || r.reason}`);
   const page = await pageFor(jobId);
@@ -89,7 +89,7 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
       }
     }
     const notSent = state.state !== "submitted";
-    return { state: state.state, confidence: state.confidence, url: await page.evaluate<string>("location.href"), errors, needsCode: notSent && SECURITY_CODE.test(after), humanCheck: notSent && !SECURITY_CODE.test(after) && HUMAN_CHECK.test(after), excerpt: after.replace(/\s+/g, " ").slice(-400) };
+    return { state: state.state, confidence: state.confidence, url: await page.evaluate<string>("location.href"), errors, needsCode: notSent && SECURITY_CODE.test(after), humanCheck: notSent && !SECURITY_CODE.test(after) && HUMAN_CHECK.test(after), refused: notSent && ALREADY_APPLIED.test(after), excerpt: after.replace(/\s+/g, " ").slice(-400) };
   } finally {
     page.close();
   }
@@ -97,6 +97,9 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
 
 /** The choice on a cookie banner that allows the least. */
 const DECLINE_COOKIES = "^\\s*(necessary only|only necessary|necessary cookies only|use necessary cookies only|reject all|reject|decline|decline all|refuse|deny)\\s*$";
+
+/** A board that refuses a second application from the same person for now. The job is skipped, not held. */
+export const ALREADY_APPLIED = /recently applied for another role|unable to accept an additional application|already (applied|submitted an application)/i;
 
 /** A page that asks the person to prove they are not a robot (BambooHR after Submit). Only the person can pass it. */
 export const HUMAN_CHECK = /not a robot|i am human|i'm human|captcha/i;

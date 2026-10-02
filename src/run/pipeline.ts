@@ -157,6 +157,13 @@ export function submitAndRecord(jev: JevClient, id: string, force: boolean, keep
           askingForCodes.add(siteOf(id));
           return false;
         }
+        if (r.refused) {
+          // The company takes one application per person for now. Nothing to hold: the job is skipped with the board's own words.
+          record(id, "skipped", "the board refused a second application: you recently applied to this company");
+          console.log("  the board refused a second application to this company");
+          if (!keepOpen) await closeJobTab(id);
+          return false;
+        }
         if (r.humanCheck) {
           // A robot check is the person's to pass. The tab stays open, filled, and the site's other jobs wait for another day.
           record(id, "needs_review", HUMAN_REASON);
