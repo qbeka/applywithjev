@@ -4,7 +4,8 @@
  * you can run them by hand too. Every command prints JSON with --json so
  * the output is machine-readable.
  */
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Command } from "commander";
 import { loadEnv, DISCOVER, PATHS, RUN } from "./config.js";
@@ -12,7 +13,7 @@ import { discover } from "./discover.js";
 import { JevClient } from "./jev/client.js";
 import { applyUrlFor } from "./jobs/normalize.js";
 import { loadQueue, nextQueued, saveQueue, sortEntries, updateEntry, QueueStatus, type QueueEntry } from "./jobs/queue.js";
-import { loadRows, saveRows, upsertEntry } from "./log/csv.js";
+import { appliedRecords, loadRows, saveRows, toRecord, upsertEntry } from "./log/csv.js";
 import { loadProfile } from "./profile/schema.js";
 import { answerContext } from "./answers/context.js";
 import { mapForm } from "./forms/mapForm.js";
@@ -22,12 +23,14 @@ import { ensureBrowser } from "./browser/cdp.js";
 import { closeJobTab, fillJob, inspect, loadReport, resolveJob, setValues, submitJob, type Fill, type FillReport } from "./browser/formRunner.js";
 import { hostIs, type Job } from "./jobs/normalize.js";
 import { rememberWalledHost } from "./jobs/walled.js";
-import { logNotes } from "./answers/resolve.js";
+import { contextFingerprint, logNotes } from "./answers/resolve.js";
+import { loadMemory, prune, saveMemory } from "./answers/memory.js";
 import { formatCost, loadCost } from "./log/cost.js";
+import { formatChecks, isReadyToRun, nextStep, runChecks } from "./doctor.js";
 
 loadEnv();
 const program = new Command();
-program.name("applywithjev").description("Find, rate and apply to software jobs with JEV, Claude Code and Claude in Chrome.").version("0.1.0");
+program.name("applywithjev").description("Find and rate software jobs with JEV, fill and check each application form in Chrome, and let Claude Code write what needs writing.").version("0.1.0");
 
 const out = (data: unknown, json: boolean, human: () => void) => (json ? console.log(JSON.stringify(data, null, 2)) : human());
 
@@ -134,7 +137,7 @@ program
     console.log(json);
   });
 
-type RunOptions = { count: number; dry?: boolean; json?: boolean };
+type RunOptions = { count: number; dry?: boolean; json?: boolean; fresh?: boolean };
 
 /** The jobs a run works on: the given ids, or the best queued ones. A real run marks them in progress; a rehearsal leaves the queue alone. */
 function takeJobs(ids: string[], o: RunOptions): QueueEntry[] {
@@ -172,21 +175,21 @@ async function fillAll(entries: QueueEntry[]): Promise<FillReport[]> {
   });
 }
 
-/** Hands what JEV left open to Claude, a few forms at a time. A writer error leaves the form as it was, not ready. */
-async function resolveAll(reports: FillReport[]): Promise<FillReport[]> {
+/**
+ * Settles what JEV left open, a few forms at a time: from the answer memory where the question was
+ * answered before, from Claude otherwise. A writer error leaves the form as it was, not ready.
+ */
+async function resolveAll(reports: FillReport[], fresh = false): Promise<FillReport[]> {
   const profile = loadProfile();
+  const jev = new JevClient();
   const q = loadQueue();
   const out = [...reports];
   const todo = reports.map((r, i) => ({ r, i })).filter(({ r }) => r.state === "filled" && !r.ready);
-  // The first form goes alone. Its call stores the candidate's context in the provider's cache,
-  // and every later call reads it from there at a tenth of the price.
-  const batches = [todo.slice(0, 1)];
-  for (let at = 1; at < todo.length; at += RUN.writerConcurrency) batches.push(todo.slice(at, at + RUN.writerConcurrency));
-  for (const batch of batches) {
+  for (let at = 0; at < todo.length; at += RUN.writerConcurrency) {
     await Promise.all(
-      batch.map(async ({ r, i }) => {
+      todo.slice(at, at + RUN.writerConcurrency).map(async ({ r, i }) => {
         try {
-          out[i] = await resolveJob(profile, q.entries.find((e) => e.job.id === r.jobId) ?? null, r.jobId);
+          out[i] = await resolveJob(profile, q.entries.find((e) => e.job.id === r.jobId) ?? null, r.jobId, { jev, fresh });
         } catch (err) {
           out[i] = { ...r, reason: `writer: ${err instanceof Error ? err.message : String(err)}` };
         }
@@ -220,9 +223,10 @@ program
 
 program
   .command("resolve <ids...>")
-  .description("Hand the fields JEV left open on filled forms to Claude (Sonnet 5.5, high effort), write its answers in and verify them")
-  .action(async (ids: string[]) => {
-    (await resolveAll(ids.map(loadReport))).forEach(printFill);
+  .description("Settle the fields JEV left open on filled forms: from the answer memory, or by Claude (Sonnet 5.5, high effort). Write the answers in and verify them")
+  .option("--fresh", "ignore the answer memory and ask Claude again")
+  .action(async (ids: string[], o: { fresh?: boolean }) => {
+    (await resolveAll(ids.map(loadReport), !!o.fresh)).forEach(printFill);
   });
 
 program
@@ -231,10 +235,11 @@ program
   .option("--count <n>", "with no ids: take this many jobs from the top of the queue", (v) => parseInt(v, 10), 1)
   .option("--submit", "submit each form that ends up ready. Without it, forms are left open in the window for review")
   .option("--dry", "a rehearsal: fill and resolve, record nothing, submit nothing, close the tabs")
+  .option("--fresh", "ignore the answer memory and ask Claude again")
   .option("--json")
   .action(async (ids: string[], o: RunOptions & { submit?: boolean }) => {
     const began = new Date().toISOString();
-    const reports = await resolveAll(await fillAll(takeJobs(ids, o)));
+    const reports = await resolveAll(await fillAll(takeJobs(ids, o)), !!o.fresh);
     if (o.json) console.log(JSON.stringify(reports, null, 2));
     else reports.forEach(printFill);
     if (o.dry) {
@@ -263,6 +268,71 @@ program
     const done = reports.map((r) => loadQueue().entries.find((e) => e.job.id === r.jobId)).filter((e): e is QueueEntry => !!e);
     console.log(`\nCost of this run\n${formatCost(loadCost(began))}`);
     console.log(`\n${done.filter((e) => e.status === "applied").length} applied, ${done.filter((e) => e.status === "needs_review").length} need review, ${done.filter((e) => e.status === "blocked" || e.status === "skipped" || e.status === "failed").length} blocked, skipped or failed, ${done.filter((e) => e.status === "in_progress").length} filled and waiting for submit`);
+    console.log(whereTheRecordIs());
+  });
+
+const whereTheRecordIs = () => `Applications you sent: ${PATHS.applied}\nEvery job considered: ${PATHS.applications}`;
+
+program
+  .command("log")
+  .description("Your applications: the ones you sent, newest first. The same list is in applied.csv at the top of this folder")
+  .option("--all", "every job the tool considered, not only the ones you sent")
+  .option("--json", "print the rows as JSON with plain field names")
+  .option("--open", "open the file in your spreadsheet program")
+  .action((o: { all?: boolean; json?: boolean; open?: boolean }) => {
+    const rows = loadRows();
+    // Writing the rows back rebuilds applied.csv, so it exists even before the first save of this version.
+    if (rows.length) saveRows(rows);
+    const file = o.all ? PATHS.applications : PATHS.applied;
+    if (o.open) {
+      if (!existsSync(file)) return console.log(`Nothing to open yet. ${file} is created by the first discover run.`);
+      if (process.platform === "darwin") spawn("open", [file], { stdio: "ignore", detached: true }).unref();
+      return console.log(file);
+    }
+    const records = o.all ? rows.map(toRecord) : appliedRecords(rows);
+    if (o.json) return console.log(JSON.stringify(records, null, 2));
+    for (const r of records) console.log(`${(r.applied_on || "          ").padEnd(10)}  ${r.company.slice(0, 24).padEnd(24)} ${r.role.slice(0, 46).padEnd(46)} ${r.location.slice(0, 26).padEnd(26)} ${o.all && "status" in r ? String(r.status).slice(0, 30).padEnd(30) + " " : ""}${r.job_link}`);
+    console.log(`\n${records.length} ${o.all ? "jobs considered" : "applications sent"}\n${whereTheRecordIs()}`);
+  });
+
+program
+  .command("doctor")
+  .description("Check that everything a run needs is in place, and say what to do next")
+  .option("--online", "also make one tiny JEV call and one tiny Claude Code call to prove the key and the sign-in work")
+  .option("--json")
+  .action(async (o: { online?: boolean; json?: boolean }) => {
+    const checks = await runChecks(!!o.online);
+    console.log(o.json ? JSON.stringify({ ready: isReadyToRun(checks), next: nextStep(checks), checks }, null, 2) : formatChecks(checks));
+    if (!isReadyToRun(checks)) process.exitCode = 1;
+  });
+
+program
+  .command("memory")
+  .description("The answer memory: answers Claude gave before, reused so the same question is not paid for twice")
+  .option("--forget <text>", "forget every remembered answer whose question or company contains this text")
+  .option("--clear", "forget everything")
+  .option("--json")
+  .action((o: { forget?: string; clear?: boolean; json?: boolean }) => {
+    const fingerprint = contextFingerprint(loadProfile());
+    let mem = loadMemory();
+    if (o.clear) {
+      saveMemory({ version: 1, forms: {}, answers: [] });
+      return console.log("The answer memory is empty.");
+    }
+    if (o.forget) {
+      const t = o.forget.toLowerCase();
+      const before = mem.answers.length + Object.keys(mem.forms).length;
+      mem = { version: 1, answers: mem.answers.filter((a) => !a.question.toLowerCase().includes(t) && !a.company.toLowerCase().includes(t)), forms: Object.fromEntries(Object.entries(mem.forms).filter(([, f]) => !f.company.toLowerCase().includes(t))) };
+      saveMemory(mem);
+      return console.log(`Forgot ${before - mem.answers.length - Object.keys(mem.forms).length} entries.`);
+    }
+    // Entries written before the profile last changed can never match again, so they are dropped here.
+    const current = prune(mem, fingerprint);
+    if (existsSync(PATHS.memory)) saveMemory(current);
+    if (o.json) return console.log(JSON.stringify(current, null, 2));
+    for (const a of current.answers) console.log(`${a.question.slice(0, 90).padEnd(90)}  ${a.value.replace(/\s+/g, " ").slice(0, 60).padEnd(60)}  (${a.company})`);
+    console.log(`\n${current.answers.length} answers that hold on any form, ${Object.keys(current.forms).length} forms remembered whole. File: ${PATHS.memory}`);
+    console.log("An answer is reused only while your profile, drafts and voice guide stay as they were when it was written.");
   });
 
 program
@@ -383,6 +453,7 @@ program
       console.log(`Queue from ${summary.generatedAt}`);
       console.log(`applied ${summary.applied} (today ${summary.appliedToday}) | queued ${summary.queued} | in progress ${summary.inProgress} | needs review ${summary.needsReview} | blocked ${summary.blocked} | failed ${summary.failed} | skipped ${summary.skipped}`);
       for (const [r, n] of summary.topSkipReasons) console.log(`  ${String(n).padStart(4)}  ${r}`);
+      console.log(whereTheRecordIs());
     });
   });
 
@@ -411,11 +482,23 @@ async function submitAndRecord(jev: JevClient, id: string, force: boolean, keepO
   return false;
 }
 
-/** Writes the two sheet cells a person would otherwise fill in by hand, for every job just applied to, in one writer call. */
+/**
+ * Fills the two sheet cells a person would otherwise write by hand, for every job just applied to.
+ * A form Claude resolved already carries its note. The rest are written in one writer call.
+ */
 async function noteApplied(ids: string[]): Promise<void> {
   if (!ids.length) return;
   const entries = loadQueue().entries.filter((e) => ids.includes(e.job.id));
-  const notes = await logNotes(loadProfile(), entries);
+  const notes = new Map<string, { whatTheyDo: string; whyFit: string }>();
+  for (const e of entries) {
+    try {
+      const n = loadReport(e.job.id).resolution?.note;
+      if (n && (n.what_they_do || n.why_fit)) notes.set(e.job.id, { whatTheyDo: n.what_they_do, whyFit: n.why_fit });
+    } catch {
+      /* no report: the batch call below covers it */
+    }
+  }
+  for (const [id, n] of await logNotes(loadProfile(), entries.filter((e) => !notes.has(e.job.id)))) notes.set(id, n);
   let rows = loadRows();
   for (const e of entries) {
     const n = notes.get(e.job.id);
@@ -468,7 +551,7 @@ async function paced<T, R>(items: T[], host: (item: T) => string, work: (item: T
 
 function printFill(r: FillReport) {
   console.log(`\n== ${r.company} | ${r.title} [${r.jobId}] ${r.state === "filled" ? (r.ready ? "READY" : "filled, not ready") : "blocked"} in ${r.seconds.toFixed(1)}s, JEV $${r.jevCostUsd.toFixed(4)}`);
-  if (r.resolution) console.log(`   Claude: ${r.resolution.verdict}${r.resolution.reason ? `, ${r.resolution.reason}` : ""} (${r.resolution.answers.length} answers)`);
+  if (r.resolution) console.log(`   ${r.writerCalled === false ? "Memory" : "Claude"}: ${r.resolution.verdict}${r.resolution.reason ? `, ${r.resolution.reason}` : ""} (${r.resolution.answers.length} answers${r.recalled ? `, ${r.recalled} from memory` : ""}${r.writerCalled === false ? ", Claude was not asked" : ""})`);
   console.log(`   ${r.url}`);
   if (r.reason) console.log(`   ${r.reason}`);
   for (const f of r.fields) console.log(`   ${f.required ? "*" : " "} ${f.action.padEnd(6)} ${f.label.slice(0, 80).padEnd(80)} ${f.shown.slice(0, 70)}${f.note ? `  (${f.note})` : ""}`);

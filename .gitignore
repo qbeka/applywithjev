@@ -8,6 +8,8 @@ data/profile.json
 data/bank.json
 data/voice.local.md
 data/applications.csv
+applied.csv
+data/memory.json
 data/queue.json
 data/cache/
 data/runs/

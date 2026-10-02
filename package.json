@@ -8,9 +8,11 @@
   "bin": { "applywithjev": "./src/cli.ts" },
   "scripts": {
     "cli": "tsx src/cli.ts",
+    "doctor": "tsx src/cli.ts doctor",
     "discover": "tsx src/cli.ts discover",
     "status": "tsx src/cli.ts status",
     "apply": "tsx src/cli.ts apply",
+    "log": "tsx src/cli.ts log",
     "test": "vitest run",
     "test:watch": "vitest",
     "check-types": "tsc --noEmit",

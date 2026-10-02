@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { COLUMNS, SHEET_COLUMNS, compactRows, emptyRow, localDate, parseCsv, toCsv, upsertEntry } from "../src/log/csv.js";
+import { mkdtempSync, readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { APPLIED_COLUMNS, COLUMNS, SHEET_COLUMNS, appliedRecords, compactRows, emptyRow, localDate, parseCsv, saveRows, toCsv, upsertEntry } from "../src/log/csv.js";
 import type { QueueEntry } from "../src/jobs/queue.js";
 
 const entry = (over: Partial<QueueEntry> = {}): QueueEntry => ({
@@ -53,6 +56,23 @@ describe("csv", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ "App. Status": "Applied", "Applied On": "2026-10-01", "Contact #1 (Name / Role / LinkedIn)": "Jane", "Job Link": board });
     expect(rows[1]?.Company).toBe("Beta");
+  });
+  it("lists only the applications that were sent, newest first, under plain column names", () => {
+    let rows = upsertEntry([], entry({ status: "applied", appliedAt: "2026-10-01T15:00:00Z" }), { "What They Do": "Builds rockets." });
+    rows = upsertEntry(rows, entry({ job: { ...entry().job, id: "b", url: "https://x/2", company: "Beta" }, status: "skipped", statusReason: "workday" }));
+    rows = upsertEntry(rows, entry({ job: { ...entry().job, id: "c", url: "https://x/3", company: "Gamma" }, status: "applied", appliedAt: "2026-10-02T15:00:00Z" }));
+    const sent = appliedRecords(rows);
+    expect(sent.map((r) => r.company)).toEqual(["Gamma", "Acme"]);
+    expect(sent[1]).toMatchObject({ applied_on: "2026-10-01", role: "SWE Intern", job_link: "https://x/1", what_they_do: "Builds rockets.", job_id: "abc" });
+  });
+  it("writes applied.csv next to the full record, with one header a script can rely on", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "awj-csv-"));
+    const rows = upsertEntry([], entry({ status: "applied", appliedAt: "2026-10-01T15:00:00Z" }));
+    saveRows(rows, path.join(dir, "applications.csv"), path.join(dir, "applied.csv"));
+    const [header, first] = parseCsv(readFileSync(path.join(dir, "applied.csv"), "utf8"));
+    expect(header).toEqual([...APPLIED_COLUMNS]);
+    expect(header?.every((h) => /^[a-z_]+$/.test(h))).toBe(true);
+    expect(first?.[1]).toBe("Acme");
   });
 });
 

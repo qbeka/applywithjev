@@ -1,7 +1,13 @@
 /**
- * data/applications.csv: the one record of every job considered and what
- * happened. The first fifteen columns match the user's tracking sheet so
- * the file pastes straight into it; the rest are the tool's own.
+ * Two files, written together.
+ *
+ * data/applications.csv is the record of every job considered and what
+ * happened. Its first fifteen columns match the user's tracking sheet so the
+ * file pastes straight into it; the rest are the tool's own.
+ *
+ * applied.csv, at the top of the project folder, holds only the applications
+ * that were sent, newest first, under plain column names that a script can
+ * read without a mapping. It is rebuilt from the full record on every save.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -80,9 +86,46 @@ export function loadRows(file = PATHS.applications): Row[] {
   });
 }
 
-export function saveRows(rows: Row[], file = PATHS.applications): void {
+export function saveRows(rows: Row[], file = PATHS.applications, appliedFile: string | null = file === PATHS.applications ? PATHS.applied : null): void {
   mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, toCsv([[...COLUMNS], ...compactRows(rows).map((r) => COLUMNS.map((c) => r[c] ?? ""))]));
+  const kept = compactRows(rows);
+  writeFileSync(file, toCsv([[...COLUMNS], ...kept.map((r) => COLUMNS.map((c) => r[c] ?? ""))]));
+  if (appliedFile) writeFileSync(appliedFile, toCsv([[...APPLIED_COLUMNS], ...appliedRecords(kept).map((r) => APPLIED_COLUMNS.map((c) => r[c]))]));
+}
+
+/** The columns of applied.csv: lower case, no spaces, one meaning each. */
+export const APPLIED_COLUMNS = ["applied_on", "company", "role", "location", "job_link", "work_auth", "term", "level", "ats", "source", "fit_score", "what_they_do", "why_fit", "notes", "job_id"] as const;
+export type AppliedRecord = Record<(typeof APPLIED_COLUMNS)[number], string>;
+
+/** One plain record per row of the full file. */
+export function toRecord(r: Row): AppliedRecord & { status: string; skip_reason: string } {
+  return {
+    applied_on: r["Applied On"],
+    company: r.Company,
+    role: r["Role / Title"],
+    location: r.Location,
+    job_link: r["Job Link"],
+    work_auth: r["Visa / Work Auth"],
+    term: r.Term,
+    level: r.Level,
+    ats: r.ATS,
+    source: r.Source,
+    fit_score: r["Fit Score"],
+    what_they_do: r["What They Do"],
+    why_fit: r["Why You're a Fit"],
+    notes: r.Notes,
+    job_id: r["Job ID"],
+    status: r["App. Status"],
+    skip_reason: r["Skip Reason"],
+  };
+}
+
+/** The applications that were sent, newest first. */
+export function appliedRecords(rows: Row[]): AppliedRecord[] {
+  return rows
+    .filter((r) => r["App. Status"].startsWith("Applied"))
+    .map(toRecord)
+    .sort((a, b) => b.applied_on.localeCompare(a.applied_on) || a.company.localeCompare(b.company));
 }
 
 const STATUS_RANK = ["Applied", "Needs review", "Blocked", "In progress", "Queued", "Failed", "Skipped"];
