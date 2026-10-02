@@ -250,17 +250,20 @@ export async function mapForm(jev: JevClient, profile: Profile, job: Job, dump: 
     const answers = Object.keys(questions).length ? await jev.decide(buildFormState(profile, job, dump, chunk), questions, `map-form:${job.id}:${job.company}`) : {};
     for (const f of chunk) planned.push(planField(f, answers[f.id], profile, job));
   }
-  for (const f of dump.fields.filter((f) => f.kind === "file")) {
-    const text = `${f.label} ${f.name} ${f.hint} ${f.selector}`;
-    const isAutofill = /autofill|auto-fill|parse|prefill/i.test(text);
-    const isResume = !isAutofill && (/resume|cv|curriculum/i.test(text) || !/cover|letter|transcript|portfolio|photo|other/i.test(text));
+  const fileBoxes = dump.fields.filter((f) => f.kind === "file");
+  const wants = fileBoxes.map(fileBoxWants);
+  // A box that names no document is the resume box only when no other box on the form asks for the resume.
+  const unnamedResume = wants.includes("resume") ? -1 : wants.indexOf("unnamed");
+  fileBoxes.forEach((f, i) => {
+    const want = i === unnamedResume ? "resume" : wants[i];
+    const file = want === "resume" ? profile.resume.path : want === "transcript" ? (profile.transcript?.path ?? null) : null;
     planned.push({
       id: f.id, selector: f.selector, kind: f.kind, label: f.label, required: f.required,
-      action: isResume ? "upload" : "skip", key: isResume ? "resume_upload" : "leave_blank",
-      value: isResume ? profile.resume.path : null, optionLabel: null, confidence: 1,
-      note: isResume ? null : isAutofill ? "autofill helper, skipped so it does not overwrite the plan" : "not a resume upload",
+      action: file ? "upload" : "skip", key: want === "resume" ? "resume_upload" : "leave_blank",
+      value: file, optionLabel: null, confidence: 1,
+      note: file ? null : want === "autofill" ? "autofill helper, skipped so it does not overwrite the plan" : want === "transcript" ? "asks for a transcript. Set transcript.path in your profile to attach one" : "not a resume upload",
     });
-  }
+  });
   const ordered = dump.fields.map((f) => planned.find((p) => p.id === f.id) as PlannedField);
   return {
     jobId: job.id,
@@ -347,6 +350,16 @@ export function planField(f: DumpedField, answer: Answer | undefined, profile: P
     return { ...base, action: "fill", key, value, confidence: a.confidence, note };
   }
   return { ...base, action: "review", key, value: null, confidence: a.confidence, note: "unrecognized key" };
+}
+
+/** Which document a file box asks for, from its question, its name and its hint. The resume is never put in a box that asks for something else. */
+export function fileBoxWants(f: Pick<DumpedField, "label" | "name" | "hint" | "selector">): "resume" | "transcript" | "autofill" | "other" | "unnamed" {
+  const text = `${f.label} ${f.name} ${f.hint} ${f.selector}`;
+  if (/autofill|auto-fill|parse|prefill/i.test(text)) return "autofill";
+  if (/transcript/i.test(text)) return "transcript";
+  if (/resume|résumé|\bcv\b|curriculum/i.test(text)) return "resume";
+  if (/cover|letter|portfolio|photo|picture|certificate|writing sample|work sample|reference|other|additional/i.test(text)) return "other";
+  return "unnamed";
 }
 
 function agreedConfidence(a: ChoiceAnswer, profile: Profile, job: Job): number {

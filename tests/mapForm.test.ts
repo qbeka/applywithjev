@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ProfileSchema } from "../src/profile/schema.js";
 import { PROFILE_KEYS, profileFacts, valueFor } from "../src/profile/fieldKeys.js";
-import { authForCountry, educationDatePlan, employmentDatePlan, hasChoosableOptions, isSlotChoice, planField, questionsFor, sectionOf, valueForJob } from "../src/forms/mapForm.js";
+import { authForCountry, educationDatePlan, employmentDatePlan, hasChoosableOptions, isSlotChoice, planField, questionsFor, sectionOf, valueForJob, fileBoxWants } from "../src/forms/mapForm.js";
 import { FieldsDump, isApplicationForm, type DumpedField } from "../src/forms/fields.js";
 import type { Job } from "../src/jobs/normalize.js";
 
@@ -212,6 +212,20 @@ describe("work history, signatures and combined contact boxes", () => {
   });
   it("answers a box that wants both a phone and an email with both", () => {
     expect(valueFor(profile, "phone_and_email")).toBe("+1 5555550123, ada@example.com");
+  });
+});
+
+describe("which document a file box asks for", () => {
+  const box = (label: string, name = "", selector = "#x") => ({ label, name, hint: "", selector });
+  it("reads the question, not the button", () => {
+    expect(fileBoxWants(box("Resume/CV (Attach)", "resume", "#resume"))).toBe("resume");
+    expect(fileBoxWants(box("Please provide a recent transcript of your undergraduate studies (Attach)", "question_1"))).toBe("transcript");
+    expect(fileBoxWants(box("Cover Letter (Attach)", "cover_letter"))).toBe("other");
+    expect(fileBoxWants(box("Autofill from resume"))).toBe("autofill");
+    expect(fileBoxWants(box("Attach", "question_2"))).toBe("unnamed");
+  });
+  it("never takes a transcript box for the resume, even when both words appear", () => {
+    expect(fileBoxWants(box("Upload your transcript (not your resume)"))).toBe("transcript");
   });
 });
 
