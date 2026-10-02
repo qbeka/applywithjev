@@ -435,12 +435,43 @@ enforces it.
 
 ## What is planned
 
-These are not built yet.
+None of this is built yet. Today the tool only fills forms that need no
+account, and it skips every site that asks you to sign in.
 
-- **Job boards that need a sign-in.** A command that lets you sign in to
-  LinkedIn, Workday and similar sites yourself, in the tool's Chrome window.
-  The tool could then read and fill forms there. You would type your
-  password. The tool never would.
+### Sign in to job sites
+
+Many jobs sit behind a sign-in: LinkedIn, Workday, iCIMS, Taleo, Oracle and
+company career sites with their own accounts. On one search, 903 of the
+4,454 jobs found were on Workday alone. The plan is one command that opens
+a site in the tool's Chrome window so that you can sign in yourself.
+
+- You type your password. The tool never sees it and never types it.
+- The tool keeps each sign-in in its own Chrome profile, apart from your
+  everyday browser, so you sign in to each site once.
+- You can connect as many sites as you like and remove any of them.
+- Once a site is connected, the tool can read its jobs and fill its forms
+  in the same way it does today, with the same checks.
+
+### LinkedIn
+
+With LinkedIn connected, the tool could read your saved searches and job
+alerts as another source of jobs, and fill "Easy Apply" forms. LinkedIn's
+terms limit automated use, so this will be slow, opt-in, and off by
+default.
+
+### Read sign-in emails from Gmail
+
+Some sites email you a code or a link when you sign in or after you apply.
+Today you have to copy that code yourself. The plan is to let the tool read
+it for you, if you allow it.
+
+- It will read only the newest message from the site you are signing in to
+  or have just applied to.
+- It will use the code or the link and nothing else in the message.
+- It will not read, send, move or delete any other email.
+
+### Also planned
+
 - **Forms that run over several pages**, such as Jobvite and
   SmartRecruiters.
 - **Windows and Linux.** The tool is tested only on a Mac.

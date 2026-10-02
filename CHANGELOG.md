@@ -52,6 +52,8 @@ Keep a Changelog and the project uses Conventional Commits.
   that were sent, newest first, under plain column names. `log` prints it,
   `log --json` gives the rows as JSON, `log --open` opens it.
 - The demographic yes or no questions can be declined in the profile.
+- The README says what is planned: signing in to job sites yourself in the
+  tool's window, LinkedIn as a source, and reading sign-in codes from Gmail.
 
 ### Changed
 - A candidate who may work in the United States is no longer ruled out by
