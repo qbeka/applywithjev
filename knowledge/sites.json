@@ -5,22 +5,27 @@
    "controls": {
     "text": {
      "method": "script",
-     "worked": 1
+     "worked": 4
     },
     "email": {
      "method": "script",
-     "worked": 1
+     "worked": 4
     },
     "tel:intl-tel": {
      "method": "script",
-     "worked": 1
+     "worked": 4
+    },
+    "textarea": {
+     "method": "script",
+     "worked": 3
     }
    },
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
-   "forms": 0,
-   "ready": 0,
+   "codeOn": "",
+   "forms": 4,
+   "ready": 1,
    "trouble": {},
    "updated": "2026-10-02"
   },
@@ -28,24 +33,88 @@
    "controls": {
     "text": {
      "method": "script",
-     "worked": 6
+     "worked": 16
     },
     "combobox:testid-select": {
-     "method": "clicked",
-     "worked": 4
+     "method": "script",
+     "worked": 9
     },
     "combobox": {
      "method": "clicked",
-     "worked": 6
+     "worked": 16
     },
     "radio:drawn-radio": {
      "method": "script",
-     "worked": 4
+     "worked": 16
+    },
+    "checkbox:label-drawn": {
+     "method": "script",
+     "worked": 6
     }
    },
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
+   "codeOn": "",
+   "forms": 10,
+   "ready": 9,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "c3.ai": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 1
+    },
+    "email": {
+     "method": "script",
+     "worked": 1
+    },
+    "combobox": {
+     "method": "clicked",
+     "worked": 1
+    },
+    "tel": {
+     "method": "script",
+     "worked": 1
+    },
+    "checkbox": {
+     "method": "script",
+     "worked": 1
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "codeOn": "",
+   "forms": 1,
+   "ready": 1,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "careers.activision.com": {
+   "controls": {
+    "email": {
+     "method": "script",
+     "worked": 2
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "codeOn": "",
+   "forms": 1,
+   "ready": 1,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "careers.amd.com": {
+   "controls": {},
+   "signIn": true,
+   "pages": 1,
+   "emailsCode": false,
+   "codeOn": "",
    "forms": 0,
    "ready": 0,
    "trouble": {},
@@ -55,19 +124,19 @@
    "controls": {
     "text": {
      "method": "script",
-     "worked": 18
+     "worked": 2
     },
     "email": {
      "method": "script",
-     "worked": 18
+     "worked": 2
     },
     "select": {
      "method": "script",
-     "worked": 18
+     "worked": 2
     },
     "checkbox": {
      "method": "script",
-     "worked": 18
+     "worked": 2
     },
     "tel:intl-tel": {
      "method": "typed",
@@ -77,8 +146,50 @@
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
-   "forms": 9,
+   "codeOn": "",
+   "forms": 10,
    "ready": 5,
+   "trouble": {
+    "tel:intl-tel": {
+     "why": "the page did not keep the value",
+     "count": 2
+    }
+   },
+   "updated": "2026-10-02"
+  },
+  "innovativesystems.applytojob.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 1
+    },
+    "email": {
+     "method": "script",
+     "worked": 1
+    },
+    "tel": {
+     "method": "script",
+     "worked": 1
+    },
+    "select": {
+     "method": "script",
+     "worked": 1
+    },
+    "checkbox": {
+     "method": "script",
+     "worked": 1
+    },
+    "radio": {
+     "method": "script",
+     "worked": 1
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "codeOn": "",
+   "forms": 1,
+   "ready": 0,
    "trouble": {},
    "updated": "2026-10-02"
   },
@@ -100,6 +211,7 @@
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
+   "codeOn": "",
    "forms": 0,
    "ready": 0,
    "trouble": {},
@@ -109,30 +221,31 @@
    "controls": {
     "text": {
      "method": "script",
-     "worked": 43
+     "worked": 21
     },
     "combobox:react-select": {
      "method": "script",
-     "worked": 43
+     "worked": 21
     },
     "tel:intl-tel": {
      "method": "script",
-     "worked": 43
+     "worked": 21
     },
     "number": {
      "method": "script",
-     "worked": 8
+     "worked": 6
     },
     "checkbox": {
      "method": "script",
-     "worked": 11
+     "worked": 2
     }
    },
    "signIn": false,
    "pages": 1,
-   "emailsCode": false,
-   "forms": 27,
-   "ready": 27,
+   "emailsCode": true,
+   "codeOn": "2026-10-02",
+   "forms": 48,
+   "ready": 45,
    "trouble": {},
    "updated": "2026-10-02"
   },
@@ -140,17 +253,137 @@
    "controls": {
     "text": {
      "method": "script",
-     "worked": 12
+     "worked": 48
     },
     "email": {
      "method": "script",
-     "worked": 12
+     "worked": 48
     },
     "radio": {
      "method": "script",
-     "worked": 1
+     "worked": 24
     },
     "radio:buttons": {
+     "method": "script",
+     "worked": 22
+    },
+    "tel": {
+     "method": "script",
+     "worked": 26
+    },
+    "url": {
+     "method": "script",
+     "worked": 21
+    },
+    "combobox": {
+     "method": "script",
+     "worked": 25
+    },
+    "select": {
+     "method": "script",
+     "worked": 13
+    },
+    "checkbox": {
+     "method": "script",
+     "worked": 23
+    },
+    "number": {
+     "method": "script",
+     "worked": 5
+    },
+    "textarea": {
+     "method": "script",
+     "worked": 3
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "codeOn": "",
+   "forms": 56,
+   "ready": 48,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "jobs.jobvite.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 2
+    },
+    "tel": {
+     "method": "script",
+     "worked": 1
+    },
+    "select": {
+     "method": "script",
+     "worked": 1
+    },
+    "radio:label-drawn": {
+     "method": "script",
+     "worked": 1
+    }
+   },
+   "signIn": false,
+   "pages": 2,
+   "emailsCode": false,
+   "codeOn": "",
+   "forms": 1,
+   "ready": 1,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "jobs.lever.co": {
+   "controls": {
+    "select": {
+     "method": "script",
+     "worked": 8
+    },
+    "text": {
+     "method": "script",
+     "worked": 9
+    },
+    "email": {
+     "method": "script",
+     "worked": 9
+    },
+    "combobox": {
+     "method": "clicked",
+     "worked": 9
+    },
+    "textarea": {
+     "method": "script",
+     "worked": 7
+    },
+    "select:select2": {
+     "method": "script",
+     "worked": 2
+    },
+    "radio": {
+     "method": "script",
+     "worked": 5
+    },
+    "checkbox": {
+     "method": "script",
+     "worked": 2
+    }
+   },
+   "signIn": false,
+   "pages": 1,
+   "emailsCode": false,
+   "codeOn": "",
+   "forms": 9,
+   "ready": 9,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "nexthopai.bamboohr.com": {
+   "controls": {
+    "text": {
+     "method": "script",
+     "worked": 2
+    },
+    "radio": {
      "method": "script",
      "worked": 1
     }
@@ -158,8 +391,9 @@
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
-   "forms": 9,
-   "ready": 9,
+   "codeOn": "",
+   "forms": 2,
+   "ready": 0,
    "trouble": {},
    "updated": "2026-10-02"
   },
@@ -177,6 +411,7 @@
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
+   "codeOn": "",
    "forms": 0,
    "ready": 0,
    "trouble": {},
@@ -196,6 +431,29 @@
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
+   "codeOn": "",
+   "forms": 0,
+   "ready": 0,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "www.d2l.com": {
+   "controls": {},
+   "signIn": true,
+   "pages": 1,
+   "emailsCode": false,
+   "codeOn": "",
+   "forms": 0,
+   "ready": 0,
+   "trouble": {},
+   "updated": "2026-10-02"
+  },
+  "www.google.com": {
+   "controls": {},
+   "signIn": true,
+   "pages": 1,
+   "emailsCode": false,
+   "codeOn": "",
    "forms": 0,
    "ready": 0,
    "trouble": {},
@@ -219,6 +477,7 @@
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
+   "codeOn": "",
    "forms": 0,
    "ready": 0,
    "trouble": {},
@@ -250,6 +509,7 @@
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
+   "codeOn": "",
    "forms": 0,
    "ready": 0,
    "trouble": {},
@@ -265,8 +525,9 @@
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
-   "forms": 0,
-   "ready": 0,
+   "codeOn": "",
+   "forms": 1,
+   "ready": 1,
    "trouble": {},
    "updated": "2026-10-02"
   }
