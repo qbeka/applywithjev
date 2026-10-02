@@ -20,7 +20,7 @@ import { mapForm } from "./forms/mapForm.js";
 import { decidePageState } from "./forms/pageState.js";
 import { FieldsDump } from "./forms/fields.js";
 import { ensureBrowser } from "./browser/cdp.js";
-import { closeJobTab, fillJob, inspect, loadReport, resolveJob, setValues, submitJob, type Fill, type FillReport } from "./browser/formRunner.js";
+import { checkJob, closeJobTab, fillJob, inspect, loadReport, resolveJob, setValues, submitJob, type Fill, type FillReport } from "./browser/formRunner.js";
 import { hostIs, type Job } from "./jobs/normalize.js";
 import { rememberWalledHost } from "./jobs/walled.js";
 import { contextFingerprint, logNotes } from "./answers/resolve.js";
@@ -167,13 +167,32 @@ async function fillAll(entries: QueueEntry[]): Promise<FillReport[]> {
   const jev = new JevClient();
   await ensureBrowser();
   return paced(entries, (e) => hostOf(applyUrlFor(e.job as unknown as Job)), async (e) => {
+    let timer: NodeJS.Timeout | undefined;
     try {
-      return await fillJob(jev, profile, e.job as unknown as Job);
+      const tooLong = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`the form did not finish loading and filling in ${RUN.fillTimeoutMs / 1000}s`)), RUN.fillTimeoutMs);
+      });
+      const filling = fillJob(jev, profile, e.job as unknown as Job);
+      // If the time runs out, the fill is abandoned: its tab is closed below, and whatever it does afterwards is ignored.
+      filling.catch(() => undefined);
+      return await Promise.race([filling, tooLong]);
     } catch (err) {
+      if (err instanceof Error && /did not finish loading/.test(err.message)) {
+        abandoned = true;
+        await closeJobTab(e.job.id).catch(() => undefined);
+      }
       return { jobId: e.job.id, company: e.job.company, title: e.job.title, ats: e.job.ats, url: e.job.url, state: "blocked", reason: err instanceof Error ? err.message : String(err), fields: [], drafts: [], reviews: [], failed: [], missingRequired: [], ready: false, seconds: 0, jevCostUsd: 0 };
+    } finally {
+      clearTimeout(timer);
     }
   });
 }
+
+/** Set when a fill was abandoned. Its page connection may still be open, so the command ends the process itself when it is done. */
+let abandoned = false;
+const endIfAbandoned = () => {
+  if (abandoned) process.exit(process.exitCode ?? 0);
+};
 
 /**
  * Settles what JEV left open, a few forms at a time: from the answer memory where the question was
@@ -219,6 +238,7 @@ program
     if (o.dry) for (const r of reports) await closeJobTab(r.jobId);
     if (o.json) console.log(JSON.stringify(reports, null, 2));
     else reports.forEach(printFill);
+    endIfAbandoned();
   });
 
 program
@@ -245,7 +265,7 @@ program
     if (o.dry) {
       for (const r of reports) await closeJobTab(r.jobId);
       if (!o.json) console.log(`\nCost of this run\n${formatCost(loadCost(began))}`);
-      return;
+      return endIfAbandoned();
     }
     const jev = new JevClient();
     const sent: string[] = [];
@@ -269,6 +289,7 @@ program
     console.log(`\nCost of this run\n${formatCost(loadCost(began))}`);
     console.log(`\n${done.filter((e) => e.status === "applied").length} applied, ${done.filter((e) => e.status === "needs_review").length} need review, ${done.filter((e) => e.status === "blocked" || e.status === "skipped" || e.status === "failed").length} blocked, skipped or failed, ${done.filter((e) => e.status === "in_progress").length} filled and waiting for submit`);
     console.log(whereTheRecordIs());
+    endIfAbandoned();
   });
 
 const whereTheRecordIs = () => `Applications you sent: ${PATHS.applied}\nEvery job considered: ${PATHS.applications}`;
@@ -398,6 +419,29 @@ program
   });
 
 program
+  .command("check <ids...>")
+  .description("Read what each job's tab shows now, without clicking. Records the job as applied if the page is a confirmation. Use it after you finished a form by hand")
+  .action(async (ids: string[]) => {
+    const jev = new JevClient();
+    const sent: string[] = [];
+    for (const id of ids) {
+      try {
+        const r = await checkJob(jev, id);
+        console.log(`${id}  ${r.needsCode ? "still needs your code" : r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
+        if (r.state === "submitted") {
+          record(id, "applied", null);
+          await closeJobTab(id);
+          sent.push(id);
+        } else console.log(`  page ends: ${r.excerpt}`);
+      } catch (err) {
+        console.log(`${id}  not checked: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    await noteApplied(sent);
+    console.log(`${sent.length} of ${ids.length} recorded as applied`);
+  });
+
+program
   .command("close <ids...>")
   .description("Close the runner tabs of these jobs")
   .action(async (ids: string[]) => {
@@ -462,15 +506,26 @@ const notReady = (r: FillReport) =>
     ? r.resolution.reason
     : [...r.missingRequired.map((l) => `empty: ${l.slice(0, 60)}`), ...r.failed.map((f) => `did not land: ${f.label.slice(0, 60)}`), ...r.reviews.map((x) => `unsure: ${x.label.slice(0, 60)}`), ...r.drafts.map((x) => `unwritten: ${x.label.slice(0, 60)}`)].join("; ") || (r.reason ?? "not verified");
 
+const CODE_REASON = (id: string) => `the board emailed you a code to confirm a person is applying. Type it into the open tab, click Submit, then run: check ${id}`;
+const lastSubmit = new Map<string, number>();
+
 /** Submits one ready form and records what the page became: applied, or failed with what the page said. */
 async function submitAndRecord(jev: JevClient, id: string, force: boolean, keepOpen = false): Promise<boolean> {
   try {
+    // Submissions to one site are spaced out. A burst from one person reads as a robot.
+    const host = hostOf(loadReport(id).url).split(".").slice(-2).join(".");
+    const wait = (lastSubmit.get(host) ?? 0) + RUN.submitGapMs - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    lastSubmit.set(host, Date.now());
     const r = await submitJob(jev, id, force);
-    console.log(`${id}  ${r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
+    console.log(`${id}  ${r.needsCode ? "needs your code" : r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
     if (r.state === "submitted") {
       record(id, "applied", null);
       if (!keepOpen) await closeJobTab(id);
       return true;
+    } else if (r.needsCode) {
+      // Only the person can pass a human check. The tab stays open, filled, for them.
+      record(id, "needs_review", CODE_REASON(id));
     } else {
       if (r.errors.length) console.log(`  errors: ${r.errors.join(" | ")}`);
       console.log(`  page: ${r.excerpt}`);

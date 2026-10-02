@@ -55,7 +55,19 @@ Keep a Changelog and the project uses Conventional Commits.
 - The README says what is planned: signing in to job sites yourself in the
   tool's window, LinkedIn as a source, and reading sign-in codes from Gmail.
 
+- `check` command: reads what a job's tab shows without clicking and records
+  the job as applied if it is a confirmation, for forms finished by hand.
+- A time limit per form (`RUN.fillTimeoutMs`), so a page that never settles
+  is recorded as blocked instead of holding up the run.
+- A pause between submissions to the same site (`RUN.submitGapMs`).
+
 ### Changed
+- A page that still shows the form after Submit, with no error, is watched a
+  little longer before the result is recorded. A slow confirmation was being
+  recorded as not sent.
+- A board that emails a code to confirm a person is applying is recognised.
+  The form is left open for the person and the record says what to do.
+- French submit buttons are recognised.
 - A candidate who may work in the United States is no longer ruled out by
   postings that refuse sponsorship. The rule now reads the profile.
 - The writer runs in an empty folder and on the five-minute cache, and

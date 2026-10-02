@@ -207,7 +207,7 @@ date. It ranks the job lower and leaves the choice to you.
 
 | Job board | What to expect |
 |---|---|
-| Greenhouse | Works well. |
+| Greenhouse | Works well. After several applications in a short time, Greenhouse emails you a code to confirm that a person is applying. The tool stops there and leaves the form open. You type the code and send the form, then run `check <job id>` to record it. |
 | Ashby | Works well. The tool fills these forms one field at a time, because Ashby saves each field as you type. |
 | Lever | Works well. Lever shows a "prove you are human" test when you send, which you do yourself. |
 | Rippling, BambooHR | Works in part. The tool fills what it can confirm and holds the form if anything is uncertain. |
@@ -251,7 +251,9 @@ The tool holds the form and tells you why when:
 - the form asks you to sign, by typing your name under a contract
 - the form asks you to pick a date or a time for an interview or a test
 - the form includes a quiz or a take-home task
-- the site shows a "prove you are human" test or emails you a code
+- the site shows a "prove you are human" test or emails you a code. On
+  2 October 2026 Greenhouse asked for a code on 7 of 13 forms sent within
+  a few minutes
 
 ## Apply to jobs
 
@@ -408,6 +410,7 @@ Run each command as `npx tsx src/cli.ts <command>`.
 | `inspect <id>` | Shows what a filled form holds now, and any errors on the page |
 | `set <id> --values file.json` | Writes answers you chose into a filled form |
 | `submit <ids>` | Sends forms that are ready |
+| `check <ids>` | Reads what each form's tab shows now, without clicking, and records the job as applied if it is a confirmation. Use it after you finished a form by hand |
 | `log [--all] [--json] [--open]` | Lists your applications |
 | `status` | Shows totals and the reasons jobs were skipped |
 | `cost [--since time]` | Shows what you have spent on JEV and Claude |

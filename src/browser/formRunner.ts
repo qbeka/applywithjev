@@ -765,14 +765,15 @@ export async function inspect(jobId: string): Promise<{ fields: FieldReport[]; e
 }
 
 /** Clicks the form's Submit control and reports what the page became. */
-export async function submitJob(jev: JevClient, jobId: string, force = false): Promise<{ state: PageState["state"]; confidence: number; url: string; errors: string[]; excerpt: string }> {
+export async function submitJob(jev: JevClient, jobId: string, force = false): Promise<{ state: PageState["state"]; confidence: number; url: string; errors: string[]; needsCode: boolean; excerpt: string }> {
   const r = loadReport(jobId);
   if (!r.ready && !force) throw new Error(`not ready to submit: ${r.resolution?.reason || [...r.missingRequired.map((l) => `empty: ${l.slice(0, 50)}`), ...r.failed.map((f) => `failed: ${f.label.slice(0, 50)}`), ...r.reviews.map((x) => `review: ${x.label.slice(0, 50)}`), ...r.drafts.map((x) => `draft: ${x.label.slice(0, 50)}`)].join("; ") || r.reason}`);
   const page = await pageFor(jobId);
   try {
     const { dump: d, plan } = JSON.parse(readFileSync(planFile(jobId), "utf8")) as { dump: FieldsDump; plan: FillPlan };
     const candidates = plan.submitSelectors.map((s) => ({ selector: s.split("  /*")[0] ?? s, text: /\/\*\s*(.*?)\s*\*\//.exec(s)?.[1] ?? "" }));
-    const pick = candidates.find((c) => /submit/i.test(c.text)) ?? candidates.find((c) => /apply|send|finish/i.test(c.text) && !/linkedin|indeed/i.test(c.text));
+    // English first, then the French a bilingual Canadian form uses ("Soumettre la candidature", "Postuler").
+    const pick = candidates.find((c) => /submit|soumettre/i.test(c.text)) ?? candidates.find((c) => /apply|send|finish|postuler|envoyer/i.test(c.text) && !/linkedin|indeed/i.test(c.text));
     if (!pick) throw new Error("No submit control in the plan.");
     if (!force) {
       // The report says ready, but the page is what gets submitted: read the required fields once more.
@@ -802,8 +803,47 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
     await install(page);
     after = await page.evaluate<string>("window.__awj.pageText()");
     const url = await page.evaluate<string>("location.href");
-    const state = await decidePageState(jev, after, url, jobId);
-    return { state: state.state, confidence: state.confidence, url, errors: await page.evaluate<string[]>("window.__awj.errors()"), excerpt: after.replace(/\s+/g, " ").slice(0, 400) };
+    let state = await decidePageState(jev, after, url, jobId);
+    let errors = await page.evaluate<string[]>("window.__awj.errors()");
+    // Still the form, and the page reports nothing wrong: the board may only be slow to confirm. Wait for the page to change once more, then look again.
+    if (state.state !== "submitted" && !errors.length && !SECURITY_CODE.test(after)) {
+      const settled = after;
+      const until = Date.now() + BROWSER.confirmMs;
+      while (Date.now() < until && after === settled) {
+        await sleep(BROWSER.pollMs * 6);
+        try {
+          await install(page);
+          after = await page.evaluate<string>("window.__awj.pageText()");
+        } catch {
+          continue; // mid-navigation
+        }
+      }
+      if (after !== settled) {
+        state = await decidePageState(jev, after, await page.evaluate<string>("location.href"), jobId);
+        errors = await page.evaluate<string[]>("window.__awj.errors()");
+      }
+    }
+    return { state: state.state, confidence: state.confidence, url: await page.evaluate<string>("location.href"), errors, needsCode: state.state !== "submitted" && SECURITY_CODE.test(after), excerpt: after.replace(/\s+/g, " ").slice(0, 400) };
+  } finally {
+    page.close();
+  }
+}
+
+/** A board that emails a code to confirm a person is applying. Only the person can enter it. */
+const SECURITY_CODE = /verification code was sent|enter the \S+ code|security code/i;
+
+/**
+ * Reads the page a job's tab shows now, without clicking anything. This is how an application is
+ * recorded after the person finished it by hand: a human check, an emailed code, a field they fixed.
+ */
+export async function checkJob(jev: JevClient, jobId: string): Promise<{ state: PageState["state"]; confidence: number; url: string; needsCode: boolean; excerpt: string }> {
+  const page = await pageFor(jobId);
+  try {
+    await install(page);
+    const text = await page.evaluate<string>("window.__awj.pageText()");
+    const url = await page.evaluate<string>("location.href");
+    const state = await decidePageState(jev, text, url, jobId);
+    return { state: state.state, confidence: state.confidence, url, needsCode: state.state !== "submitted" && SECURITY_CODE.test(text), excerpt: text.replace(/\s+/g, " ").slice(-300) };
   } finally {
     page.close();
   }

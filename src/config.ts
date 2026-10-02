@@ -168,6 +168,8 @@ export const BROWSER = {
   uploadMs: 20_000,
   /** Longest wait for the page to change after Submit is clicked. */
   submitMs: 12_000,
+  /** A page that still looks like the form after that, with no error on it, is given this much longer: some boards take their time to confirm. */
+  confirmMs: 20_000,
   pollMs: 150,
 } as const;
 
@@ -231,6 +233,10 @@ export const RUN = {
   /** Sites that save every field to their server as it changes, and rate-limit bursts: one form at a time, with a longer pause. */
   gentleHosts: ["ashbyhq.com"],
   gentleGapMs: 6_000,
+  /** The pause between two submissions to the same site. A burst of applications from one person looks like a robot, and boards answer it with a human check. */
+  submitGapMs: 20_000,
+  /** Longest one form may take to open and fill. A page that never settles is recorded as blocked instead of holding up the run. */
+  fillTimeoutMs: 180_000,
   /** Forms handed to the writer at once. */
   writerConcurrency: 3,
   hostGapMs: 2_500,

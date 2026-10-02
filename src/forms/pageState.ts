@@ -19,8 +19,12 @@ export type PageState = {
 };
 
 export async function decidePageState(jev: JevClient, pageText: string, url: string, jobId = ""): Promise<PageState> {
+  // What a click produced is usually at the end of a long page (a confirmation, an error, a request for a code), so a long page is shown by its start and its end.
+  const flat = pageText.replace(/\s+/g, " ");
+  const half = Math.floor(JEV.maxPageTextChars / 2);
+  const text = flat.length <= JEV.maxPageTextChars ? flat : `${truncate(flat.slice(0, half), half)} [...] ${flat.slice(-half)}`;
   const answers = await jev.decide(
-    { url, text: truncate(pageText.replace(/\s+/g, " "), JEV.maxPageTextChars) },
+    { url, text },
     {
       state: choice("What kind of page is this?", {
         job_description: "A job posting with a description and an Apply button or link, but no form fields yet",

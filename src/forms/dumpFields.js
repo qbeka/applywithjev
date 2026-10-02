@@ -270,7 +270,7 @@
   out.context = headings.join(" | ").slice(0, 800);
   (form || document).querySelectorAll("button, input[type=submit], [role=button]").forEach((b) => {
     const t = (text(b) || b.value || b.getAttribute("aria-label") || "").trim();
-    if (/submit|apply|send|continue|next|review|finish/i.test(t) && visible(b)) out.submitSelectors.push(selectorFor(b) + "  /* " + t.slice(0, 40) + " */");
+    if (/submit|apply|send|continue|next|review|finish|soumettre|postuler|envoyer/i.test(t) && visible(b)) out.submitSelectors.push(selectorFor(b) + "  /* " + t.slice(0, 40) + " */");
   });
   return JSON.stringify(out);
 })();

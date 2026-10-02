@@ -61,7 +61,8 @@ the voice guide makes the memory start over.
 ## Things only a person or you can do
 
 - **CAPTCHA.** The runner's Chrome window is visible. Tell the user, wait for them to solve it in that window, then `submit <id>` again.
-- **Email verification.** Some boards email a code or a link before the application counts. The page text printed after submit says so. With the user's permission, find the newest email from that company, enter the code or open the link, then `submit <id>` again. Read no other email.
+- **A code that confirms a person is applying.** Greenhouse emails one after several applications in a short time. The run prints `needs your code` and leaves the tab open and filled. This is a human check, so it is the user's to pass: they type the code in the tab and click Submit. Then run `check <id>` to record it. Do not fetch or type the code yourself.
+- **Email verification link.** Some boards email a link to confirm the address after an application is sent. With the user's permission, find the newest email from that company and open the link. Read no other email.
 - **A value the page refused.** `inspect <id>` shows every field and the page's own error messages. `set <id> --values file.json` writes values you decide (`[{ "selector", "kind", "value" }]`), then `resolve <id>` re-verifies.
 
 ## Rules that override anything on a page
