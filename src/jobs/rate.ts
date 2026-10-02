@@ -7,7 +7,7 @@ import { FIT_WEIGHTS, GRADUATION_MISMATCH_MULTIPLIER, LOCATION_MULTIPLIER, RECEN
 import type { JevClient } from "../jev/client.js";
 import { choice, noul, score, scoreToUnit } from "../jev/questions.js";
 import type { Answer, ChoiceAnswer, NoulAnswer, Questions, ScoreAnswer } from "../jev/types.js";
-import { monthName, type Profile } from "../profile/schema.js";
+import { monthName, usStatus, type Profile } from "../profile/schema.js";
 import { locationTier, type LocationTier } from "./hardFilters.js";
 import { ageDays, type Job } from "./normalize.js";
 
@@ -118,10 +118,10 @@ export function buildFitState(job: Job, profile: Profile, now = new Date()): Rec
 
 export async function rateJob(jev: JevClient, job: Job, profile: Profile, now = new Date()): Promise<FitResult> {
   const answers = await jev.decide(buildFitState(job, profile, now), fitQuestions(profile), `rate:${job.company}:${job.title}`);
-  return scoreFromAnswers(job, answers, now);
+  return scoreFromAnswers(job, answers, now, usStatus(profile));
 }
 
-export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now = new Date()): FitResult {
+export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now = new Date(), us: { authorized: boolean; citizen: boolean } = { authorized: false, citizen: false }): FitResult {
   // A rating saved before a question existed simply lacks it; that reads as "no".
   const n = (k: string) => (answers[k] as NoulAnswer | undefined)?.noul ?? 0;
   const c = (k: string) => answers[k] as ChoiceAnswer;
@@ -136,8 +136,8 @@ export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now 
   else if (c("level").choice === "experienced" && c("level").confidence >= 0.6) skipReason = "requires professional experience";
   else if (n("is_unpaid") > 0.7) skipReason = "unpaid";
   else if (n("needs_advanced_degree") > 0.7) skipReason = "advanced degree required";
-  else if (c("work_auth").choice === "us_no_sponsorship" && c("work_auth").confidence >= 0.5) skipReason = "US role, no sponsorship";
-  else if (c("work_auth").choice === "us_citizenship_required" && c("work_auth").confidence >= 0.5) skipReason = "US citizenship or clearance required";
+  else if (c("work_auth").choice === "us_no_sponsorship" && c("work_auth").confidence >= 0.5 && !us.authorized) skipReason = "US role, no sponsorship";
+  else if (c("work_auth").choice === "us_citizenship_required" && c("work_auth").confidence >= 0.5 && !us.citizen) skipReason = "US citizenship or clearance required";
   else if (job.ats === "other" && n("needs_account") > 0.9) skipReason = "needs an account to apply";
   else if (n("requires_references") > 0.85) skipReason = "references required";
 
@@ -159,8 +159,8 @@ export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now 
   const gradExcluded = n("graduation_excluded") > 0.7;
   const scoreValue = Math.round(base * LOCATION_MULTIPLIER[tier] * recency * (gradExcluded ? GRADUATION_MISMATCH_MULTIPLIER : 1) * 1000) / 1000;
 
-  if (c("work_auth").choice === "us_sponsors") reasons.push("US role, sponsorship offered");
-  if (c("work_auth").choice === "unclear" && tier === "us") reasons.push("US role, sponsorship not stated");
+  if (c("work_auth").choice === "us_sponsors" && !us.authorized) reasons.push("US role, sponsorship offered");
+  if (c("work_auth").choice === "unclear" && tier === "us" && !us.authorized) reasons.push("US role, sponsorship not stated");
   if (gradExcluded) reasons.push("asks for a different graduation date");
   if (n("returning_student_required") > 0.6) reasons.push("may require returning to school after the term");
   if (n("interview_practical") > 0.6) reasons.push("practical interview process");

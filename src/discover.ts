@@ -14,7 +14,7 @@ import { dedupe, type Job } from "./jobs/normalize.js";
 import { entryFor, loadQueue, saveQueue, sortEntries, type QueueEntry, type QueueFile } from "./jobs/queue.js";
 import { rateJob, type FitResult } from "./jobs/rate.js";
 import { loadRows, saveRows, upsertEntry } from "./log/csv.js";
-import type { Profile } from "./profile/schema.js";
+import { usStatus, type Profile } from "./profile/schema.js";
 import { fetchAshbyBoard } from "./sources/ats/ashby.js";
 import { fetchGreenhouseBoard } from "./sources/ats/greenhouse.js";
 import { fetchLeverBoard } from "./sources/ats/lever.js";
@@ -107,13 +107,14 @@ export async function discover(profile: Profile, jev: JevClient, opts: DiscoverO
   const gradYear = profile.education[0]?.gradYear;
   const all = await collectJobs({ ...opts, ...(gradYear !== undefined ? { gradYear } : {}) });
   const learned = learnedWalledHosts();
+  const us = usStatus(profile);
   const collected = all.length;
   log(`[discover] ${collected} unique postings`);
 
   const kept: Job[] = [];
   const entries: QueueEntry[] = [];
   for (const job of all) {
-    const reason = preFilter(job, now, (url) => isWalled(url, learned));
+    const reason = preFilter(job, now, (url) => isWalled(url, learned), us);
     if (reason) entries.push(entryFor(job, null, reason, prevById.get(job.id)));
     else kept.push(job);
   }

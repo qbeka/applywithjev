@@ -3,6 +3,7 @@ import { DISCOVER } from "../src/config.js";
 import { locationTier, preFilter } from "../src/jobs/hardFilters.js";
 import type { Job } from "../src/jobs/normalize.js";
 import { FIT_QUESTIONS, fitQuestions, scoreFromAnswers } from "../src/jobs/rate.js";
+import { usStatus } from "../src/profile/schema.js";
 import type { Answer } from "../src/jev/types.js";
 
 const now = new Date("2026-10-02T12:00:00Z");
@@ -50,6 +51,11 @@ describe("preFilter", () => {
   it("rejects US roles with no sponsorship or citizenship flags, but not Canadian ones", () => {
     expect(preFilter(job({ locations: ["Austin, TX"], sponsorship: "none" }), now)).toMatch(/no sponsorship/);
     expect(preFilter(job({ locations: ["Austin, TX"], sponsorship: "citizenship" }), now)).toMatch(/citizenship/);
+    // A candidate who may work in the United States is not ruled out by "no sponsorship"; only a citizen passes a citizenship flag.
+    const resident = { authorized: true, citizen: false };
+    expect(preFilter(job({ locations: ["Austin, TX"], sponsorship: "none" }), now, () => false, resident)).toBeNull();
+    expect(preFilter(job({ locations: ["Austin, TX"], sponsorship: "citizenship" }), now, () => false, resident)).toMatch(/citizenship/);
+    expect(preFilter(job({ locations: ["Austin, TX"], sponsorship: "citizenship" }), now, () => false, { authorized: true, citizen: true })).toBeNull();
     expect(preFilter(job({ locations: ["Austin, TX"], sponsorship: "unknown" }), now)).toBeNull();
     expect(preFilter(job({ locations: ["Toronto, ON"], sponsorship: "none" }), now)).toBeNull();
   });
@@ -107,6 +113,8 @@ describe("scoreFromAnswers", () => {
     expect(scoreFromAnswers(job(), answers({ needs_advanced_degree: { noul: 0.9 } }), now).skipReason).toMatch(/degree/);
     expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_no_sponsorship", confidence: 0.8 } }), now).skipReason).toMatch(/no sponsorship/);
     expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_citizenship_required", confidence: 0.8 } }), now).skipReason).toMatch(/citizenship/);
+    expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_no_sponsorship", confidence: 0.8 } }), now, { authorized: true, citizen: false }).skipReason).toBeNull();
+    expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_citizenship_required", confidence: 0.8 } }), now, { authorized: true, citizen: true }).skipReason).toBeNull();
     expect(scoreFromAnswers(job(), answers({ requires_references: { noul: 0.95 } }), now).skipReason).toMatch(/references/);
   });
   it("only trusts the account signal when the ATS is unknown", () => {
@@ -143,6 +151,15 @@ describe("graduation window and account walls", () => {
     expect(preFilter(job({ ats: "jobvite" }), now, () => false)).toMatch(/multi-step/);
     expect(preFilter(job({ ats: "smartrecruiters" }), now, () => false)).toMatch(/multi-step/);
     expect(preFilter(job(), now, () => false)).toBeNull();
+  });
+});
+
+describe("usStatus", () => {
+  const wa = (authorizedCountries: string[], citizenships: string[]) => ({ workAuthorization: { citizenships, authorizedCountries, requiresSponsorshipElsewhere: true, statement: "" } });
+  it("reads the candidate's standing in the United States from the profile, however the country is written", () => {
+    expect(usStatus(wa(["Canada"], ["Canada"]))).toEqual({ authorized: false, citizen: false });
+    expect(usStatus(wa(["United States"], ["India"]))).toEqual({ authorized: true, citizen: false });
+    expect(usStatus(wa(["USA", "Canada"], ["U.S."]))).toEqual({ authorized: true, citizen: true });
   });
 });
 

@@ -9,6 +9,8 @@ import { z } from "zod";
 import { PATHS } from "../config.js";
 
 const YesNo = z.enum(["yes", "no"]);
+/** A voluntary self-identification question may be declined. */
+const YesNoDecline = z.enum(["yes", "no", "decline"]);
 
 export const ProfileSchema = z.object({
   name: z.object({
@@ -103,11 +105,11 @@ export const ProfileSchema = z.object({
   demographics: z.object({
     gender: z.string(),
     ethnicity: z.string(),
-    hispanicOrLatino: YesNo,
-    veteran: YesNo,
-    disability: YesNo,
+    hispanicOrLatino: YesNoDecline,
+    veteran: YesNoDecline,
+    disability: YesNoDecline,
     sexualOrientation: z.string(),
-    transgender: YesNo,
+    transgender: YesNoDecline,
   }),
   preferences: z.object({
     earliestStart: z.string(),
@@ -152,6 +154,15 @@ export function loadProfile(file = PATHS.profile): Profile {
   const parsed = ProfileSchema.safeParse(JSON.parse(raw));
   if (!parsed.success) throw new Error(`data/profile.json is invalid:\n${parsed.error.message}`);
   return parsed.data;
+}
+
+/**
+ * The candidate's standing in the United States. Most postings on the lists are American and many
+ * refuse sponsorship, so discovery needs to know whether that rules the candidate out.
+ */
+export function usStatus(profile: Pick<Profile, "workAuthorization">): { authorized: boolean; citizen: boolean } {
+  const isUs = (c: string) => /^(united states( of america)?|u\.?s\.?a?\.?)$/i.test(c.trim());
+  return { authorized: profile.workAuthorization.authorizedCountries.some(isUs), citizen: profile.workAuthorization.citizenships.some(isUs) };
 }
 
 export const MONTHS = [

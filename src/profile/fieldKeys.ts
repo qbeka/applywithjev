@@ -100,7 +100,7 @@ export function valueFor(profile: Profile, key: ProfileKey): string | null {
   const edu = profile.education[0];
   if (!edu) throw new Error("profile.education must have at least one entry");
   const job = profile.experience[0];
-  const yes = (v: "yes" | "no") => (v === "yes" ? "Yes" : "No");
+  const yes = (v: "yes" | "no" | "decline") => (v === "yes" ? "Yes" : v === "no" ? "No" : "I do not wish to answer");
   switch (key) {
     case "first_name": return profile.name.first;
     case "last_name": return profile.name.last;

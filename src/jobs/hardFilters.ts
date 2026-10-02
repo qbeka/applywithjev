@@ -32,7 +32,8 @@ export function locationTier(locations: string[]): LocationTier {
   return "international";
 }
 
-export function preFilter(job: Job, now = new Date(), walled: (url: string) => boolean = isWalled): string | null {
+/** us: the candidate's standing in the United States. A candidate who may work there is not ruled out by "no sponsorship". */
+export function preFilter(job: Job, now = new Date(), walled: (url: string) => boolean = isWalled, us: { authorized: boolean; citizen: boolean } = { authorized: false, citizen: false }): string | null {
   if (job.ats === "workday") return "workday (needs an account per company)";
   if (job.ats === "taleo" || job.ats === "oracle" || job.ats === "successfactors" || job.ats === "icims" || job.ats === "amazon") {
     return `${job.ats} (needs an account)`;
@@ -49,9 +50,8 @@ export function preFilter(job: Job, now = new Date(), walled: (url: string) => b
     return "advanced degree required";
   }
   const tier = locationTier(job.locations);
-  if (tier === "us" && (job.sponsorship === "none" || job.sponsorship === "citizenship")) {
-    return job.sponsorship === "none" ? "US role, no sponsorship" : "US citizenship required";
-  }
+  if (tier === "us" && job.sponsorship === "none" && !us.authorized) return "US role, no sponsorship";
+  if (tier === "us" && job.sponsorship === "citizenship" && !us.citizen) return "US citizenship required";
   if (/\bunpaid\b|volunteer/i.test(job.title)) return "unpaid";
   return null;
 }

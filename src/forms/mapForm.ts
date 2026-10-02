@@ -56,7 +56,7 @@ export function buildFormState(profile: Profile, job: Job, dump: FieldsDump, fie
       standing_answers: profile.answers,
       gpa_policy: "Only give a GPA if the field is required. The cumulative GPA is " + (profile.education[0]?.gpa?.cumulative ?? "not provided") + " on a 4.0 scale.",
       rules: [
-        "Never claim US work authorization.",
+        `The candidate may work without sponsorship only in: ${profile.workAuthorization.authorizedCountries.join(", ")}. Never claim work authorization anywhere else.`,
         "Never write a cover letter.",
         "Salary expectation is left blank or set to negotiable.",
         "Marketing opt-ins are optional and left unchecked. Consent and acknowledgement boxes required to apply are checked.",
