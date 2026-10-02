@@ -147,7 +147,9 @@
       if (!el) return "missing";
       // A box drawn by its label counts as there when the label is.
       const label = (el.type === "radio" || el.type === "checkbox") && (el.closest("label") || (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)));
-      return !el.disabled && (el.type === "file" || visible(el) || visible(control(el)) || (label && visible(label))) ? "on" : "off";
+      // A select drawn by select2 counts as there when the box beside it is.
+      const select2 = el.tagName === "SELECT" && /select2-hidden/.test(el.className) && el.nextElementSibling;
+      return !el.disabled && (el.type === "file" || visible(el) || visible(control(el)) || (label && visible(label)) || (select2 && visible(select2))) ? "on" : "off";
     },
     /** True when keyboard input would land in this control right now. */
     hasFocus(sel) {

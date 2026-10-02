@@ -5,7 +5,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { PATHS } from "../config.js";
+import { FORM, PATHS } from "../config.js";
 import type { FieldsDump, FillPlan } from "../forms/fields.js";
 import type { Resolution } from "../answers/memory.js";
 import type { ControlState } from "./session.js";
@@ -74,6 +74,34 @@ export function loadPlan(jobId: string): { dump: FieldsDump; plan: FillPlan } {
   return JSON.parse(readFileSync(planFile(jobId), "utf8")) as { dump: FieldsDump; plan: FillPlan };
 }
 
+/**
+ * What changed on a page between two reads of it. A question that appears once another is answered
+ * pushes the controls below it down, so a control found by its position gets a new selector, and
+ * its old selector may now name another control. Controls are therefore told apart by what they
+ * are (kind, label, name), in the order they appear, never by their selector alone.
+ * moved: old selector to new, for controls that are still there under another selector.
+ * fresh: controls that were not there before.
+ */
+export function comparePages(before: FieldsDump, after: FieldsDump): { moved: Map<string, string>; fresh: FieldsDump["fields"] } {
+  const identity = (f: FieldsDump["fields"][number]) => `${f.kind}|${f.label}|${f.name}`;
+  const earlier = new Map<string, string[]>();
+  for (const f of before.fields) earlier.set(identity(f), [...(earlier.get(identity(f)) ?? []), f.selector]);
+  const moved = new Map<string, string>();
+  const fresh: FieldsDump["fields"] = [];
+  const unmatched: FieldsDump["fields"] = [];
+  for (const f of after.fields) {
+    const was = earlier.get(identity(f))?.shift();
+    if (was === undefined) unmatched.push(f);
+    else if (was !== f.selector) moved.set(was, f.selector);
+  }
+  // A control that kept its selector and only changed its words (a file box that now names the file, a box whose
+  // generated name changed) is the same control, not a new one.
+  const leftOver = new Set([...earlier.values()].flat());
+  const kindOf = new Map(before.fields.map((f) => [f.selector, f.kind]));
+  for (const f of unmatched) if (!(leftOver.has(f.selector) && kindOf.get(f.selector) === f.kind)) fresh.push(f);
+  return { moved, fresh };
+}
+
 /** A report for a job whose form could not be opened or filled at all. */
 export function blockedReport(job: { id: string; company: string; title: string; ats: string; url: string }, reason: string, url = job.url, seconds = 0): FillReport {
   return { jobId: job.id, company: job.company, title: job.title, ats: job.ats, url, state: "blocked", reason, fields: [], drafts: [], reviews: [], failed: [], leftBlank: [], missingRequired: [], ready: false, page: 1, earlier: [], hasNext: false, seconds, jevCostUsd: 0 };
@@ -133,5 +161,7 @@ export function splitFailures(plan: Pick<FillPlan, "fields">, failed: Failure[],
     const harmless = !!field && !field.required && !shown[i] && field.action !== "upload" && field.kind !== "file" && !/refused/.test(f.why);
     (harmless ? leftBlank : holds).push(f);
   }
+  // One or two optional boxes that would not take a value are a quirk of the form. Many are a fill that went wrong.
+  if (leftBlank.length > FORM.maxLeftBlank) return { holds: [...holds, ...leftBlank], leftBlank: [] };
   return { holds, leftBlank };
 }

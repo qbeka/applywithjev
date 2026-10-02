@@ -8,7 +8,8 @@ import { decidePageState, type PageState } from "../forms/pageState.js";
 import type { JevClient } from "../jev/client.js";
 import { sleep } from "./cdp.js";
 import { emptyRequired, loadPlan, loadReport, pickSubmit } from "./report.js";
-import { controlStates, inFront, install, pageFor, shownValues, type Point } from "./session.js";
+import type { FillPlan } from "../forms/fields.js";
+import { controlStates, dump, inFront, install, pageFor, shownValues, type Point } from "./session.js";
 
 /** Clicks the form's Submit control and reports what the page became. */
 export async function submitJob(jev: JevClient, jobId: string, force = false): Promise<{ state: PageState["state"]; confidence: number; url: string; errors: string[]; needsCode: boolean; excerpt: string }> {
@@ -20,6 +21,13 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
     const pick = pickSubmit(plan.submitSelectors);
     if (!pick) throw new Error("No submit control in the plan.");
     if (!force) {
+      // A question may have appeared since the page was read, or the tool may never have seen one. The whole page is
+      // read afresh, and any required control on it that shows nothing stops the click.
+      const now = await dump(page);
+      const all = now.fields.filter((f) => f.kind !== "file");
+      const asPlan = { fields: all.map((f) => ({ selector: f.selector, kind: f.kind, label: f.label, required: f.required, action: "fill" })) } as unknown as FillPlan;
+      const unseen = emptyRequired(now, asPlan, await shownValues(page, all.map((f) => f.selector)), await controlStates(page, all.map((f) => f.selector))).map((l) => l.slice(0, 50));
+      if (unseen.length) throw new Error(`not ready to submit, required fields are empty on the page: ${unseen.join("; ")}`);
       // The report says ready, but the page is what gets submitted: read the required fields once more.
       const selectors = plan.fields.map((f) => f.selector);
       const empty = emptyRequired(d, plan, await shownValues(page, selectors), await controlStates(page, selectors)).map((l) => l.slice(0, 50));

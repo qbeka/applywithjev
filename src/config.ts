@@ -154,6 +154,10 @@ export const FORM = {
   reviewConfidence: 0.5,
   /** Selects with more options than this are pre-filtered in code before JEV sees them. */
   maxOptionsForJev: 40,
+  /** How many times a page is read again after a fill, for questions that only appear once another is answered. */
+  followUpRounds: 3,
+  /** The most optional fields that may be left blank because they could not be set. More than this means the fill itself went wrong, and the form is held. */
+  maxLeftBlank: 2,
   /** Fields per JEV call. Larger forms are split into several calls. */
   fieldsPerCall: 40,
 } as const;

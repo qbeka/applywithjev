@@ -13,10 +13,10 @@ import { closeJobTab } from "../browser/session.js";
 import { submitJob } from "../browser/submit.js";
 import { logNotes } from "../answers/resolve.js";
 import { JevClient } from "../jev/client.js";
-import { applyUrlFor, type Job } from "../jobs/normalize.js";
-import { loadQueue, nextQueued, saveQueue, sortEntries, updateEntry, type QueueEntry } from "../jobs/queue.js";
+import { applyUrlFor, hostIs, type Job } from "../jobs/normalize.js";
+import { loadQueue, saveQueue, sortEntries, updateEntry, type QueueEntry } from "../jobs/queue.js";
 import { rememberWalledHost } from "../jobs/walled.js";
-import { learn, loadKnowledge } from "../knowledge/sites.js";
+import { askingForCodeToday, learn, loadKnowledge } from "../knowledge/sites.js";
 import { loadRows, saveRows, upsertEntry } from "../log/csv.js";
 import { loadProfile, type Profile } from "../profile/schema.js";
 import { limiter, paced, spacer } from "../util/pace.js";
@@ -45,13 +45,9 @@ export function takeJobs(ids: string[], o: { count: number; dry: boolean }): Que
     });
   }
   if (o.dry) return sortEntries(q.entries.filter((e) => e.status === "queued")).slice(0, o.count);
-  const entries: QueueEntry[] = [];
-  for (let i = 0; i < o.count; i++) {
-    const e = nextQueued(q);
-    if (!e) break;
-    updateEntry(q, e.job.id, { status: "in_progress", attempts: e.attempts + 1 });
-    entries.push(e);
-  }
+  // The best queued jobs, passing over sites that are asking for an emailed code today: those wait in the queue.
+  const entries = sortEntries(q.entries.filter((e) => e.status === "queued" && !waitsForAnotherDay(e))).slice(0, o.count);
+  for (const e of entries) updateEntry(q, e.job.id, { status: "in_progress", attempts: e.attempts + 1 });
   saveQueue(q);
   return entries;
 }
@@ -113,8 +109,9 @@ const CODE_REASON = `${CODE_PREFIX} to confirm a person is applying. The filled 
  * time, so the rest of its jobs are left in the queue for another day instead of being filled,
  * clicked and left waiting, each with an email to the person.
  */
-const askingForCodes = new Set<string>();
+const askingForCodes = new Set<string>(askingForCodeToday());
 const siteOfUrl = (url: string) => hostOf(url).split(".").slice(-2).join(".");
+const waitsForAnotherDay = (e: QueueEntry) => askingForCodes.has(siteOfUrl(applyUrlFor(asJob(e))));
 
 /**
  * Submissions to one site are spaced out, and only one form is being sent at any moment. A burst
@@ -237,7 +234,7 @@ export async function pipeline(entries: QueueEntry[], o: RunOptions): Promise<{ 
     if (await settle(jev, r, o)) sent.push(r.jobId);
   };
   await paced(entries, (e) => hostOf(applyUrlFor(asJob(e))), async (e) => {
-    if (o.submit && askingForCodes.has(siteOfUrl(applyUrlFor(asJob(e))))) {
+    if (o.submit && waitsForAnotherDay(e)) {
       // Not attempted: back in the queue, untouched.
       record(e.job.id, "queued", null);
       const held = blockedReport(e.job, "left in the queue: this site is asking for an emailed code today");
@@ -247,14 +244,16 @@ export async function pipeline(entries: QueueEntry[], o: RunOptions): Promise<{ 
     }
     const first = await fillOnce(jev, profile, e);
     reports[entries.indexOf(e)] = first;
-    // The rest of this job's path does not hold a fill slot: the next form starts filling now.
-    after.push(
-      (async () => {
-        const r = o.fillOnly ? first : await writer(() => walk(jev, profile, e, first, o));
-        if (RUN.fillAttempts > 1 && worthAnotherGo(r)) again.push(e);
-        else await finish(e, r);
-      })().catch((err) => console.log(`${e.job.id}  ${err instanceof Error ? err.message : String(err)}`)),
-    );
+    const rest = (async () => {
+      const r = o.fillOnly ? first : await writer(() => walk(jev, profile, e, first, o));
+      if (RUN.fillAttempts > 1 && worthAnotherGo(r)) again.push(e);
+      else await finish(e, r);
+    })().catch((err) => console.log(`${e.job.id}  ${err instanceof Error ? err.message : String(err)}`));
+    // A site that saves every field to its server (Ashby) drops saves when several of its forms are being written at
+    // once. There, one job goes from fill to submit before the next one starts. Elsewhere the rest of a job's path
+    // does not hold a fill slot: the next form starts filling now.
+    if (RUN.gentleHosts.some((h) => hostIs(hostOf(applyUrlFor(asJob(e))), h))) await rest;
+    else after.push(rest);
     return first;
   });
   await Promise.all(after);

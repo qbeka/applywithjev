@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { isFormWrite } from "../src/browser/cdp.js";
 import { closestOptions, pickOption } from "../src/browser/dropdowns.js";
-import { isClean, isReady, pickNext, pickSubmit, splitFailures } from "../src/browser/report.js";
+import { comparePages, isClean, isReady, pickNext, pickSubmit, splitFailures } from "../src/browser/report.js";
+import type { FieldsDump } from "../src/forms/fields.js";
 
 const hints = ["Edmonton", "Alberta", "AB", "Canada"];
 
@@ -91,6 +92,14 @@ describe("what holds a form and what does not", () => {
   it("holds the form when its own server refused a save, even on an optional field", () => {
     expect(splitFailures(plan, [{ selector: "#opt", why: "the form's own server refused 1 save(s): 429" }], shown).holds).toHaveLength(1);
   });
+  it("holds the form when more than a couple of optional fields would not take a value: that is a fill gone wrong", () => {
+    const many = { fields: ["#a", "#b", "#c"].map((sel) => field(sel)) } as unknown as Parameters<typeof splitFailures>[0];
+    const failed = ["#a", "#b", "#c"].map((selector) => ({ selector, why }));
+    expect(splitFailures(many, failed.slice(0, 2), ["", "", ""]).leftBlank).toHaveLength(2);
+    const all = splitFailures(many, failed, ["", "", ""]);
+    expect(all.leftBlank).toEqual([]);
+    expect(all.holds).toHaveLength(3);
+  });
   it("says what a pay box that takes only a number is waiting for", () => {
     expect(splitFailures(plan, [{ selector: "#pay", why }], shown).holds[0]?.why).toMatch(/takes only a number/);
   });
@@ -120,5 +129,34 @@ describe("when a form may be sent", () => {
     expect(isClean({ ...page })).toBe(true);
     expect(isReady({ ...page, hasNext: false, missingRequired: ["Phone"] })).toBe(false);
     expect(isReady({ ...page, state: "blocked", hasNext: false })).toBe(false);
+  });
+});
+
+describe("a page read again after it was filled", () => {
+  const f = (selector: string, label: string, kind = "radio", name = "") => ({ selector, label, kind, name });
+  const page = (fields: ReturnType<typeof f>[]) => ({ fields }) as unknown as FieldsDump;
+  it("finds a question that appeared once another was answered", () => {
+    const before = page([f("#live", "Do you live near the office?"), f("#name", "Name", "text")]);
+    const after = page([f("#live", "Do you live near the office?"), f("#move", "Are you willing to relocate?"), f("#name", "Name", "text")]);
+    const { moved, fresh } = comparePages(before, after);
+    expect(moved.size).toBe(0);
+    expect(fresh.map((x) => x.label)).toEqual(["Are you willing to relocate?"]);
+  });
+  it("follows a control that the new question pushed down, and sees the new one in its old place", () => {
+    const before = page([f("div:nth-of-type(1)", "Do you live near the office?"), f("div:nth-of-type(2)", "Do you need a visa?")]);
+    const after = page([f("div:nth-of-type(1)", "Do you live near the office?"), f("div:nth-of-type(2)", "Are you willing to relocate?"), f("div:nth-of-type(3)", "Do you need a visa?")]);
+    const { moved, fresh } = comparePages(before, after);
+    // The second place now holds the new question, and the visa question is in the third.
+    expect(fresh.map((x) => [x.selector, x.label])).toEqual([["div:nth-of-type(2)", "Are you willing to relocate?"]]);
+    expect([...moved]).toEqual([["div:nth-of-type(2)", "div:nth-of-type(3)"]]);
+  });
+  it("does not take a control that only changed its words for a new one", () => {
+    const before = page([f("#resume", "Resume/CV ATTACH RESUME/CV", "file"), f("input.code", "phone number code", "combobox", "aB3xZ")]);
+    const after = page([f("#resume", "Resume/CV RESUME.PDF Success!", "file"), f("input.code", "phone number code", "combobox", "Qr9Lm")]);
+    expect(comparePages(before, after)).toEqual({ moved: new Map(), fresh: [] });
+  });
+  it("sees nothing when nothing changed", () => {
+    const same = page([f("#a", "A"), f("#b", "B")]);
+    expect(comparePages(same, same)).toEqual({ moved: new Map(), fresh: [] });
   });
 });

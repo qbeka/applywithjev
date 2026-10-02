@@ -40,6 +40,8 @@ export const SiteNotes = z.object({
   pages: z.number().default(1),
   /** After Submit, the site emailed a code to confirm a person is applying. */
   emailsCode: z.boolean().default(false),
+  /** The last day it did. A site that asks once asks for the rest of that day. */
+  codeOn: z.string().default(""),
   /** Forms opened here, and how many of them ended ready to send. */
   forms: z.number().default(0),
   ready: z.number().default(0),
@@ -86,6 +88,7 @@ export function mergeKnowledge(shipped: Knowledge, local: Knowledge): Knowledge 
       signIn: a.signIn || b.signIn,
       pages: Math.max(a.pages, b.pages),
       emailsCode: a.emailsCode || b.emailsCode,
+      codeOn: a.codeOn > b.codeOn ? a.codeOn : b.codeOn,
       forms: a.forms + b.forms,
       ready: a.ready + b.ready,
       // A control that has since been set is no longer trouble.
@@ -134,6 +137,7 @@ export function withLesson(notes: SiteNotes, lesson: Lesson, today: string): Sit
     signIn: notes.signIn || !!lesson.signIn,
     pages: Math.max(notes.pages, lesson.pages ?? 1),
     emailsCode: notes.emailsCode || !!lesson.emailsCode,
+    codeOn: lesson.emailsCode ? today : notes.codeOn,
     forms: notes.forms + (lesson.form ? 1 : 0),
     ready: notes.ready + (lesson.form?.ready ? 1 : 0),
     trouble,
@@ -155,6 +159,10 @@ export function learn(url: string, lesson: Lesson, local = PATHS.knowledgeLocal)
     /* best effort */
   }
 }
+
+/** Sites that asked for an emailed code today, by their last two labels ("greenhouse.io"): the rest of their jobs wait for another day. */
+export const askingForCodeToday = (k: Knowledge = loadKnowledge(), today = new Date().toISOString().slice(0, 10)): string[] =>
+  [...new Set(Object.entries(k.sites).filter(([, s]) => s.codeOn === today).map(([host]) => host.split(".").slice(-2).join(".")))];
 
 /** Sites known to put a sign-in in front of their form. */
 export const signInHosts = (k: Knowledge = loadKnowledge()): string[] => Object.entries(k.sites).filter(([, s]) => s.signIn).map(([host]) => host);

@@ -201,6 +201,7 @@
     if (el.parentElement && el.parentElement.querySelector("datalist")) return "datalist";
     if (el.closest('[data-testid="select-controller"]')) return "testid-select";
     if (drawnByLabel) return "label-drawn";
+    if (el.tagName === "SELECT" && /select2-hidden/.test(el.className)) return "select2";
     return "";
   };
   const controls = document.querySelectorAll("input, select, textarea, [role=combobox], [role=listbox]");
@@ -223,12 +224,14 @@
     if (isControl && type !== "radio") usedContainers.add(containerOf(el));
     // A radio or a checkbox is often drawn by its label, with the real box kept out of sight behind it.
     const drawnByLabel = (type === "radio" || type === "checkbox") && !visible(el) && [el.closest("label"), el.id && document.querySelector(`label[for="${cssEscape(el.id)}"]`)].some((l) => l && visible(l));
-    if (!visible(el) && type !== "file" && !drawnByLabel) return;
+    // A select2 list keeps the real <select> out of sight and draws its own box beside it.
+    const drawnBySelect2 = tag === "select" && /select2-hidden/.test(el.className) && !!el.nextElementSibling && visible(el.nextElementSibling);
+    if (!visible(el) && type !== "file" && !drawnByLabel && !drawnBySelect2) return;
     // A box that cannot be typed into is skipped, unless it is a date box set through a calendar.
     const isCalendar = el.readOnly && isControl && tag === "input" && looksLikeDateBox(el);
     if (el.disabled || (el.readOnly && !isCalendar)) return;
     // A text box hidden from people and from the keyboard is the site's own bookkeeping (the parts of an address it fills in itself).
-    if (el.getAttribute("aria-hidden") === "true" && el.tabIndex === -1 && !["radio", "checkbox", "file"].includes(type)) return;
+    if (el.getAttribute("aria-hidden") === "true" && el.tabIndex === -1 && !["radio", "checkbox", "file"].includes(type) && !drawnBySelect2) return;
     const role = el.getAttribute("role");
     let kind;
     if (isCalendar) kind = "calendar";
@@ -302,6 +305,16 @@
     elementOf.set(f, el);
   });
 
+  // A group that keeps a named input of its own (Ashby's Yes/No rows do) is found by that name, which stays
+  // put when a question appears above it. A path of positions would then point at another row.
+  const groupSelectorFor = (c) => {
+    const tag = c.tagName.toLowerCase();
+    for (const inner of c.querySelectorAll(":scope > input[name]")) {
+      const s = `${tag}:has(> input[name="${attr(inner.name)}"])`;
+      if (unique(s)) return s;
+    }
+    return selectorFor(c);
+  };
   // Button groups: a labelled field whose choices are plain <button>s (Ashby's Yes/No, some custom forms).
   const groupContainers = document.querySelectorAll("[class*=field-entry i], [class*=fieldEntry], [class*=question i], fieldset, [role=radiogroup], [role=group]");
   const seenGroup = new Set();
@@ -311,7 +324,7 @@
     // Skip a container whose control was already read. An input nobody can see (Ashby keeps a hidden checkbox
     // behind its Yes and No buttons) does not count: the buttons are the control.
     if (!drawnRadios && [...c.querySelectorAll("input, select, textarea")].some((x) => x.type !== "hidden" && (dumped.has(x) || visible(x)))) return;
-    const buttons = [...c.querySelectorAll("button, [role=radio], [role=option]")].filter((b) => visible(b) && text(b).length > 0 && text(b).length <= 40 && !/upload|browse|remove|submit|apply|next|continue|back/i.test(text(b)));
+    const buttons = [...c.querySelectorAll("button, [role=radio], [role=option]")].filter((b) => visible(b) && text(b).length > 0 && text(b).length <= 90 && !/upload|browse|remove|submit|apply|next|continue|back/i.test(text(b)));
     if (buttons.length < 2 || buttons.length > 12) return;
     if ([...seenGroup].some((prev) => prev.contains(c) || c.contains(prev))) return;
     seenGroup.add(c);
@@ -321,7 +334,7 @@
     fields.push({
       id: "f" + i++,
       widget: drawnRadios ? "drawn-radio" : "buttons",
-      selector: selectorFor(c),
+      selector: groupSelectorFor(c),
       kind: "radio",
       name: c.getAttribute("data-field-path") || "",
       label: label.replace(/\s*[*✱]\s*$/, "").replace(/^\s*[*✱]\s*/, "").slice(0, LABEL_MAX),

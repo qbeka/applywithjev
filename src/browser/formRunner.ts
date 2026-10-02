@@ -20,7 +20,7 @@ import { closeTab, ensureBrowser, newTab, Page, sleep } from "./cdp.js";
 import { candidateOptions, closestOptions, readDropdownOptions } from "./dropdowns.js";
 import { applyFills, TYPED_KINDS, uploadFile, type FillGuide } from "./fill.js";
 import { learn, notesFor, signatureOf, type Method } from "../knowledge/sites.js";
-import { blockedReport, emptyRequired, emptyRequiredFields, isClean, isReady, loadPlan, loadReport, pickNext, savePlan, saveReport, SIGN_IN_REASON, splitFailures, type Failure, type FieldReport, type Fill, type FillReport } from "./report.js";
+import { blockedReport, comparePages, emptyRequired, emptyRequiredFields, isClean, isReady, loadPlan, loadReport, pickNext, savePlan, saveReport, SIGN_IN_REASON, splitFailures, type Failure, type FieldReport, type Fill, type FillReport } from "./report.js";
 import { controlStates, dump, goto, inFront, inTurn, install, loadSession, pageFor, saveSession, settle, shownValues, trace, type Point } from "./session.js";
 
 /** The text of a button that leads from a posting to its form. */
@@ -131,11 +131,46 @@ async function fillPage(page: Page, jev: JevClient, profile: Profile, job: Job, 
     trace(`${job.company}: put back ${wiped.length - still.length} of ${wiped.length} wiped value(s) after ${wait}ms`);
   }
   failedRaw = [...(await secondLook(page, jev, profile, job, d, plan, failedRaw)), ...uploadFailures];
+  failedRaw = await followUp(page, jev, profile, job, d, plan, failedRaw);
   savePlan(job.id, d, plan);
   const read = await readBack(page, d, plan, failedRaw, uploaded);
   guide.learn([...read.failed, ...read.leftBlank]);
   const partial = { jobId: job.id, company: job.company, title: job.title, ats: job.ats, ...read, page: at.page, earlier: at.earlier, hasNext: !!pickNext(plan.submitSelectors), seconds: (Date.now() - at.started) / 1000, jevCostUsd: (at.jevCostUsd ?? 0) + plan.jevCostUsd };
   return saveReport({ ...partial, ready: isReady(partial) });
+}
+
+/**
+ * Some questions only appear once another is answered ("Are you willing to relocate?" after "No, I do
+ * not live near the office"). After a fill the page is read again. Controls that moved get their new
+ * selector, and controls that are new are mapped and filled like the rest. The dump and the plan are
+ * updated in place, so every later step sees the page as it is.
+ */
+async function followUp(page: Page, jev: JevClient, profile: Profile, job: Job, d: FieldsDump, plan: FillPlan, failed: Failure[]): Promise<Failure[]> {
+  let out = failed;
+  for (let round = 0; round < FORM.followUpRounds; round++) {
+    const now = await dump(page);
+    const { moved, fresh } = comparePages(d, now);
+    if (moved.size) {
+      const to = (selector: string) => moved.get(selector) ?? selector;
+      for (const list of [d.fields, plan.fields, plan.fills, plan.drafts, plan.reviews, plan.uploads, out]) for (const f of list) f.selector = to(f.selector);
+    }
+    d.submitSelectors = now.submitSelectors;
+    plan.submitSelectors = now.submitSelectors;
+    if (!fresh.length) break;
+    trace(`${job.company}: ${fresh.length} new field(s) appeared: ${fresh.map((f) => f.label.slice(0, 30)).join(" | ")}`);
+    // Ids are per read of the page, so the new fields get ids of their own.
+    const added = fresh.map((f) => ({ ...f, id: `r${round}${f.id}` }));
+    await readDropdownOptions(page, added);
+    const more = await mapForm(jev, profile, job, { ...now, fields: added });
+    out = [...out, ...(await applyFills(page, more.fills, profile, guideFor({ ...now, fields: added })))];
+    d.fields.push(...added);
+    plan.fields.push(...more.fields);
+    plan.fills.push(...more.fills);
+    plan.drafts.push(...more.drafts);
+    plan.reviews.push(...more.reviews);
+    plan.jevCostUsd += more.jevCostUsd;
+  }
+  return out;
 }
 
 /**
@@ -375,7 +410,13 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
     const fills = resolution.answers
       .map((a) => ({ selector: a.selector, kind: open.get(a.selector)?.kind ?? "text", value: a.value }))
       .filter((f) => !(f.kind === "checkbox" && !/^(true|yes|1|on|checked)$/i.test(f.value)));
-    const failedRaw = [...(await applyFills(page, fills, profile, guideFor(d))), ...r.failed.filter((x) => dumped(x.selector)?.kind === "file").map(({ selector, why }) => ({ selector, why }))];
+    let failedRaw: Failure[] = [...(await applyFills(page, fills, profile, guideFor(d))), ...r.failed.filter((x) => dumped(x.selector)?.kind === "file").map(({ selector, why }) => ({ selector, why }))];
+    // An answer Claude gave may have brought up a further question. JEV fills what it can of those; what it cannot is open on the next look.
+    if (opts.jev && entry) {
+      const fieldsBefore = plan.fields.length;
+      failedRaw = await followUp(page, opts.jev, profile, entry.job as unknown as Job, d, plan, failedRaw);
+      if (plan.fields.length > fieldsBefore) savePlan(jobId, d, plan);
+    }
     const after = await shownValues(page, plan.fields.map((f) => f.selector));
     const states = await controlStates(page, plan.fields.map((f) => f.selector));
     const answered = new Set(resolution.answers.map((a) => a.selector));

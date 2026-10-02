@@ -116,10 +116,6 @@ export function sortEntries(entries: QueueEntry[]): QueueEntry[] {
   });
 }
 
-export function nextQueued(q: QueueFile): QueueEntry | null {
-  return sortEntries(q.entries.filter((e) => e.status === "queued")).at(0) ?? null;
-}
-
 export function updateEntry(q: QueueFile, id: string, patch: Partial<QueueEntry>): QueueEntry {
   const e = q.entries.find((x) => x.job.id === id);
   if (!e) throw new Error(`No queue entry with id ${id}`);

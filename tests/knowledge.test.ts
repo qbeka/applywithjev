@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { Knowledge, learn, loadKnowledge, mergeKnowledge, notesFor, sanitize, shareKnowledge, signatureOf, signInHosts, SiteNotes, withLesson } from "../src/knowledge/sites.js";
+import { askingForCodeToday, Knowledge, learn, loadKnowledge, mergeKnowledge, notesFor, sanitize, shareKnowledge, signatureOf, signInHosts, SiteNotes, withLesson } from "../src/knowledge/sites.js";
 
 const empty = () => SiteNotes.parse({});
 const files = () => {
@@ -41,6 +41,15 @@ describe("what one form teaches", () => {
     n = withLesson(n, { pages: 1, form: { ready: true }, emailsCode: true }, "d");
     n = withLesson(n, { signIn: true }, "d");
     expect(n).toMatchObject({ pages: 3, forms: 2, ready: 1, emailsCode: true, signIn: true });
+  });
+});
+
+describe("a site that asks for an emailed code", () => {
+  it("is left alone for the rest of that day, and tried again the next", () => {
+    const k = Knowledge.parse({ sites: { "job-boards.greenhouse.io": withLesson(empty(), { emailsCode: true }, "2026-10-02"), "jobs.lever.co": withLesson(empty(), { form: { ready: true } }, "2026-10-02") } });
+    expect(askingForCodeToday(k, "2026-10-02")).toEqual(["greenhouse.io"]);
+    expect(askingForCodeToday(k, "2026-10-03")).toEqual([]);
+    expect(k.sites["job-boards.greenhouse.io"]?.emailsCode).toBe(true);
   });
 });
 
