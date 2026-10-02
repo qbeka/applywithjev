@@ -36,7 +36,29 @@ Keep a Changelog and the project uses Conventional Commits.
 - The README is rewritten in plain language, with measured cost and accuracy
   tables. `CONTRIBUTING.md` says how the docs are written.
 
+- `/setup` skill: from a fresh clone to the first rehearsal in one
+  conversation. It builds the profile from the resume and a short interview,
+  has the user add their own key, finds jobs and rehearses. The questions it
+  asks are in `.claude/skills/setup/questions.md`.
+- `doctor` command: checks everything a run needs and names the next step.
+  `--online` proves the key and the Claude Code sign-in with one tiny call
+  each.
+- Answer memory (`data/memory.json`, `memory` command, `apply --fresh`): a
+  form that was rehearsed is sent with the answers that were read, without
+  asking Claude again. An answer the writer marks as true for any company is
+  reused on other forms, and JEV decides whether a differently worded
+  question is the same one.
+- `applied.csv` at the top of the project folder: only the applications
+  that were sent, newest first, under plain column names. `log` prints it,
+  `log --json` gives the rows as JSON, `log --open` opens it.
+- The demographic yes or no questions can be declined in the profile.
+
 ### Changed
+- A candidate who may work in the United States is no longer ruled out by
+  postings that refuse sponsorship. The rule now reads the profile.
+- The writer runs in an empty folder and on the five-minute cache, and
+  returns the sheet notes with its answers. Ten forms cost $0.17 of Claude
+  at API prices, down from $0.23.
 - The writer costs about half as much: the candidate's context is cached by
   the provider, and the sheet notes for a run are written in one call.
 - One posting is one job: ids come from the ATS posting id, so the same job

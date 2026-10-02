@@ -25,8 +25,12 @@ profile. The tool makes that the only way.
 
 ## Personal data
 
-- The profile, resume, queue, CSV, HTTP cache and run logs are git-ignored
-  (`.gitignore`). `data/profile.example.json` is fictional.
+- The profile, resume, queue, both CSV files, the answer memory, HTTP cache
+  and run logs are git-ignored (`.gitignore`). `data/profile.example.json`
+  is fictional.
+- The answer memory (`data/memory.json`) holds answers Claude wrote for you
+  and the questions they answered. It never leaves the machine.
+  `npx tsx src/cli.ts memory --clear` empties it.
 - The OpenRouter key is read from `.env` only. Error bodies are redacted
   before they are printed (`src/jev/client.ts`).
 - What leaves the machine: job text and the profile's facts go to
@@ -57,7 +61,7 @@ for yourself.
 ## Before open-sourcing a fork
 
 ```bash
-git status --ignored | grep data/        # profile.json, bank.json, voice.local.md, resume, csv, queue, runs must be ignored
+git status --ignored | grep -E "data/|applied.csv"   # profile.json, bank.json, voice.local.md, memory.json, resume, both csv files, queue, runs must be ignored
 git log -p | grep -i -E "sk-or-v1-|@gmail|phone" # nothing should match
 npm audit --omit=dev
 ```

@@ -1,6 +1,28 @@
 # Setup (macOS)
 
-*Fifteen minutes the first time. Last verified 2026-10-02.*
+*About twenty minutes the first time. Last verified 2026-10-02.*
+
+## The short way
+
+```bash
+git clone https://github.com/qbeka/applywithjev && cd applywithjev && npm install && claude
+```
+
+Then type `/setup`. Claude asks for your resume, asks what the resume does
+not say, opens `.env` for you to paste your OpenRouter key, finds jobs,
+rehearses three forms, and waits for you to say "go". The questions it asks
+are listed in `.claude/skills/setup/questions.md`.
+
+At any point, this command lists what is in place and names the next step:
+
+```bash
+npx tsx src/cli.ts doctor
+```
+
+Add `--online` to also make one tiny JEV call and one tiny Claude Code call,
+which proves the key and the sign-in work.
+
+The rest of this page is the same setup done by hand.
 
 ## 1. Prerequisites
 
@@ -52,8 +74,8 @@ important choices:
 Then put your resume at `data/resume/resume.pdf` and set `resume.path` to
 its absolute path, for example `/Users/you/applywithjev/data/resume/resume.pdf`.
 
-Check it: `npx tsx src/cli.ts answer-context --question "tell us about yourself"`
-prints your facts back; a schema error names the field to fix.
+Check it: `npx tsx src/cli.ts doctor` reads the profile and the resume; a
+schema error names the field to fix.
 
 ## 5. Your voice, your drafts, your standing answers
 
@@ -109,9 +131,16 @@ npx tsx src/cli.ts apply --count 10 --submit   # or do it all in one go
 ```
 
 Stay at the computer: a CAPTCHA or an email verification code is yours to
-handle, in the runner's window. `npx tsx src/cli.ts status` and
-`data/applications.csv` show what happened. Inside Claude Code, `/apply`
-runs the same loop and deals with what needs a second look.
+handle, in the runner's window. `npx tsx src/cli.ts log` lists what you
+sent; the same list is `applied.csv` at the top of the project folder, and
+`data/applications.csv` is the full record of every job considered. Inside
+Claude Code, `/apply` runs the same loop and deals with what needs a second
+look.
+
+A rehearsal is not wasted work. The tool remembers the answers Claude wrote
+(`data/memory.json`), so the real run reuses them and does not ask Claude
+again. Changing your profile, drafts or voice guide makes it start over.
+`npx tsx src/cli.ts memory` shows what is remembered.
 
 ## Updating
 
@@ -125,7 +154,9 @@ Your `data/` files are untouched by updates.
 
 | Symptom | Fix |
 |---|---|
+| Not sure what is wrong | `npx tsx src/cli.ts doctor --online` names it |
 | `OPENROUTER_API_KEY is not set` | Create `.env` as in step 3 |
+| An answer is stale after you changed something on the form by hand | `npx tsx src/cli.ts apply --fresh <id>`, or `memory --forget <company>` |
 | `No profile at data/profile.json` | Step 4 |
 | `Chrome did not start on port 9333` | Install Google Chrome, or set `BROWSER.chromePath` in `src/config.ts` |
 | `could not run claude` | Install Claude Code and run `claude` once to log in |

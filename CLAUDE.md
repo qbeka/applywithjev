@@ -2,8 +2,12 @@
 
 Read `README.md` first, then `docs/ARCHITECTURE.md`. The CLI is the product:
 `discover` builds the queue, `apply` fills, resolves, verifies and submits.
-The skills in `.claude/skills/` run it with a person in the loop: `/discover`,
-`/apply`, `/profile`.
+The skills in `.claude/skills/` run it with a person in the loop: `/setup`,
+`/discover`, `/apply`, `/profile`.
+
+If `data/profile.json` does not exist, the person in front of you has not
+set the tool up. Offer `/setup` before anything else. `npx tsx src/cli.ts
+doctor` says what is in place and what to do next.
 
 ## What never changes
 
@@ -12,9 +16,9 @@ The skills in `.claude/skills/` run it with a person in the loop: `/discover`,
   field cannot be answered truthfully from the profile, the job is marked
   `needs_review`, not answered.
 - **No PII in git.** `data/profile.json`, `data/bank.json`,
-  `data/voice.local.md`, the resume, `data/applications.csv`,
-  `data/queue.json` and everything under `data/cache/` and `data/runs/` are
-  git-ignored. Tests use `data/profile.example.json` only. Never paste real
+  `data/voice.local.md`, the resume, `data/applications.csv`, `applied.csv`,
+  `data/memory.json`, `data/queue.json` and everything under `data/cache/`
+  and `data/runs/` are git-ignored. Tests use `data/profile.example.json` only. Never paste real
   values into a fixture, a doc, source, or a commit message.
 - **Verify, then submit.** A value is real when it has been read back from
   the page. A form is submitted only when it is `ready`, and an application
@@ -35,6 +39,12 @@ The skills in `.claude/skills/` run it with a person in the loop: `/discover`,
 - **Nothing about one candidate in source.** Years, cities, drafts and
   phrasing come from the profile, `data/bank.json` and
   `data/voice.local.md`.
+- **A remembered answer never outranks the profile.** The answer memory
+  (`src/answers/memory.ts`) reuses an answer only under the same fingerprint
+  of the candidate's context, only for the same form or for an answer the
+  writer marked reusable, and only when the field can take it. A reused
+  answer is read back from the page like any other. Do not loosen
+  `MEMORY.sameQuestionConfidence` without measuring wrong matches.
 - **Pace every site.** Job boards drop or refuse bursts. Concurrency and
   gaps per host are in `RUN`; do not remove them to go faster.
 - **Tunables live in `src/config.ts`.** No thresholds, weights, timeouts or
@@ -50,7 +60,7 @@ The skills in `.claude/skills/` run it with a person in the loop: `/discover`,
   library. The browser layer uses Node's own `fetch` and `WebSocket`. Adding
   a dependency needs a reason in the PR.
 - Every external payload (JEV, ATS APIs, the queue file, form dumps, the
-  writer's reply) is parsed with a zod schema before use.
+  writer's reply, the memory file) is parsed with a zod schema before use.
 - The three scripts in `src/forms/*.js` run inside the page. They are plain
   JavaScript with no imports, and they never use timers.
 - Tests in `tests/`, vitest, offline. Fixtures in `tests/fixtures/` are real

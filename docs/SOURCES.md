@@ -35,9 +35,9 @@ back empty and are rated from the title and company alone.
 
 | Source | Why not yet | How it would be added |
 |---|---|---|
-| LinkedIn Jobs | Login-walled; Claude in Chrome can read it but discover runs without a browser | A browser step in `/discover` that searches "software engineer intern" filtered to the last week and writes URLs to `data/imports/linkedin.csv` |
+| LinkedIn Jobs | Needs a sign-in, and discover runs without a browser | Planned: a command that lets the user sign in themselves in the runner's Chrome window, after which a browser step can read saved searches and write the links to `data/imports/linkedin.csv`. The tool never types a password. Read LinkedIn's terms first: they restrict automated access |
 | Indeed, Glassdoor | Bot protection on the public pages | Same browser step |
-| Workday postings | Every one needs an account per company. 843 of the postings in one run were Workday | The user said later; account creation would be its own skill with the user's password manager |
+| Workday postings | Every one needs an account per company. 903 of the postings in one run were Workday | The same planned sign-in command, one company at a time |
 | iCIMS, Taleo, Oracle, SuccessFactors, Amazon Jobs | Account required | Same |
 | German-language boards | English only for version one | A `lang` field on `Job` and a German `voice.md` |
 | Company careers pages with no public API | No structured feed | Per-company HTML parsers; the board APIs cover most of the early-career market |

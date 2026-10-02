@@ -65,7 +65,7 @@ fillJob
      │                                                      read back, retry what did not stick
   secondLook ─→ JEV again, on the closest real options of a dropdown that refused a value
   report ─→ data/runs/<id>.report.json: every field, what the page shows, ready or not
-resolveJob ─→ open fields → Claude (headless, no tools) → applyFills → read back → ready?
+resolveJob ─→ open fields → answer memory, then Claude (headless, no tools) for the rest → applyFills → read back → ready?
 submitJob ─→ refuse unless ready ─→ re-read required fields ─→ click ─→ page-state (JEV) ─→ CSV
 ```
 
@@ -124,22 +124,67 @@ and a count of the page's own writes (POST, PUT, PATCH) with any that failed.
 5. After the click, JEV classifies the page. Only `submitted` is recorded as
    applied. Validation errors, a CAPTCHA or a login are recorded as they are.
 
+### The answer memory (`src/answers/memory.ts`)
+
+`data/memory.json` keeps what the writer decided, so a question is paid for
+once. `resolveJob` looks there before it calls Claude, in this order:
+
+1. **The same form, the same open fields.** The whole resolution (verdict,
+   reason, answers, sheet note) is reused. This is the rehearsal followed by
+   the real run: what was read is what is sent, and Claude is not called.
+2. **The same form, other fields open.** JEV is sure of a field on one pass
+   and unsure on the next, so the open set can differ. Answers the form got
+   last time are reused field by field, if last time ended `ready`. A form
+   that was held is judged whole again.
+3. **The same question on another form.** The writer marks each answer
+   `reusable` only when the value would be right on any company's form. Such
+   an answer is stored under the question with the company's name masked,
+   and reused when the kind of control matches and the field can take the
+   value (the option exists, the text fits `maxLength`).
+4. **A question worded another way.** JEV is asked one choice question per
+   open field: which remembered question asks for exactly the same
+   information, or none. Only a confidence of
+   `MEMORY.sameQuestionConfidence` reuses the answer. On sixteen hand-made
+   pairs and twenty-six real ones it made no wrong match at 0.9; it also
+   missed several true paraphrases, which only costs a Claude call.
+
+Three rules keep it from lowering accuracy. Every entry carries a
+fingerprint of the writer's system prompt (the rules, the profile, the
+drafts, the voice guide), so any change there makes the memory start over.
+A group of checkboxes is answered from memory only when every box in it is.
+An answer that was itself recalled is never stored again under the new
+wording, so one "same question" judgement never builds on another. A reused
+answer is written and read back like any other.
+
+`memory` lists it, `memory --forget <text>` and `--clear` drop entries, and
+`apply --fresh` ignores it for one run. `MEMORY.enabled` turns it off.
+
 ### Cost
 
 `src/log/cost.ts` reads the two usage logs and reports spend by purpose and
 per form. `apply` prints the cost of its own run at the end, and `cost`
-prints it for any period. Three choices keep the writer cheap:
+prints it for any period. These choices keep the writer cheap:
 
+- The answer memory, above.
 - The candidate's context (voice guide, facts, drafts) is the system prompt,
   identical for every form, so the provider caches it. The first call of a
-  run goes alone to store it; the calls after it read it at a tenth of the
-  price.
+  process stores it; calls that start meanwhile wait for it and then read it
+  at a tenth of the price.
+- The cache is the five-minute one (`WRITER.env`). Writing to it costs 1.25
+  times the input price; the one-hour cache costs 2 times, and a run reads
+  the prompt back within seconds.
+- The headless call runs in an empty folder outside the project
+  (`WRITER.cwd`). Claude Code adds the `CLAUDE.md` of the folder it starts
+  in to every prompt, which was about 1,300 tokens per call of rules about
+  changing this code.
 - A form with nothing left open makes no writer call at all.
-- The two sheet notes for every job applied to in a run are written in one
-  call, not one call per job.
+- The writer returns the two sheet notes with its answers, since it has
+  already read the posting. Jobs it was not asked about get their notes in
+  one call for the whole run.
 
-Measured on ten forms on 2026-10-02: JEV $0.012, Claude $0.23 at API prices.
-The README has the table.
+Measured on ten forms on 2026-10-02: JEV $0.012, Claude $0.17 at API prices
+(was $0.23 before the last four points). The same ten forms again: Claude
+$0.018. The README has the table.
 
 ### Speed
 
@@ -162,7 +207,9 @@ Job boards answer bursts with errors, so the pacing is part of correctness.
 | `data/profile.json` | `ProfileSchema` | the user | everything |
 | `data/bank.json`, `data/voice.local.md` | drafts per intent; the voice guide | the user | the writer, `answer-context` |
 | `data/queue.json` | `QueueFile` v1 | discover, `apply`, `mark` | everything |
-| `data/applications.csv` | 25 columns, first 15 match the user's sheet | discover, `apply`, `submit`, `mark` | the user |
+| `data/applications.csv` | 25 columns, first 15 match the user's sheet. Every job considered | discover, `apply`, `submit`, `mark` | the user, `log --all` |
+| `applied.csv` | 15 columns with plain names. Only what was sent, newest first. Rebuilt on every save of the file above | the same commands | the user, `log` |
+| `data/memory.json` | `MemoryFile` v1: whole resolutions by job id, and reusable answers by question | `resolve`, `apply` | `resolve`, `apply`, `memory` |
 | `data/runs/jev-usage.jsonl` | one JSON object per JEV call: label, tokens, cost | `JevClient` | `cost`, the user |
 | `data/runs/writer-usage.jsonl` | one JSON object per Claude call: purpose, job, tokens, cost | the writer | `cost`, the user |
 | `data/runs/<id>.plan.json`, `<id>.report.json` | the dump and plan, and the verified result, per job | `fill`, `resolve` | `resolve`, `inspect`, `submit`, `survey` |
@@ -170,6 +217,16 @@ Job boards answer bursts with errors, so the pacing is part of correctness.
 | `data/runs/chrome-profile/` | the runner's Chrome profile | Chrome | Chrome |
 | `data/cache/walled-hosts.json` | careers sites found behind a login | `apply` | discover |
 | `data/cache/http/` | cached GET bodies keyed by URL hash | `getText` | `getText` |
+
+## Setup and `doctor` (`src/doctor.ts`)
+
+`doctor` runs a list of checks (Node, Chrome, Claude Code, the key, the
+profile, the resume, the voice guide, the drafts, the queue) and names the
+first thing that blocks a run. `--online` adds one tiny JEV call and one
+tiny Claude Code call. The `/setup` skill runs it after every step, so the
+skill never has to work out where a half-finished setup stopped. The
+questions the skill asks, and the profile field each answer fills, are in
+`.claude/skills/setup/questions.md`.
 
 ## Why its own Chrome window and no browser library
 
