@@ -12,7 +12,7 @@ import type { FillPlan } from "../forms/fields.js";
 import { controlStates, dump, inFront, install, pageFor, shownValues, type Point } from "./session.js";
 
 /** Clicks the form's Submit control and reports what the page became. */
-export async function submitJob(jev: JevClient, jobId: string, force = false): Promise<{ state: PageState["state"]; confidence: number; url: string; errors: string[]; needsCode: boolean; excerpt: string }> {
+export async function submitJob(jev: JevClient, jobId: string, force = false): Promise<{ state: PageState["state"]; confidence: number; url: string; errors: string[]; needsCode: boolean; humanCheck: boolean; excerpt: string }> {
   const r = loadReport(jobId);
   if (!r.ready && !force) throw new Error(`not ready to submit: ${r.resolution?.reason || [...r.missingRequired.map((l) => `empty: ${l.slice(0, 50)}`), ...r.failed.map((f) => `failed: ${f.label.slice(0, 50)}`), ...r.reviews.map((x) => `review: ${x.label.slice(0, 50)}`), ...r.drafts.map((x) => `draft: ${x.label.slice(0, 50)}`)].join("; ") || r.reason}`);
   const page = await pageFor(jobId);
@@ -88,7 +88,8 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
         errors = await page.evaluate<string[]>("window.__awj.errors()");
       }
     }
-    return { state: state.state, confidence: state.confidence, url: await page.evaluate<string>("location.href"), errors, needsCode: state.state !== "submitted" && SECURITY_CODE.test(after), excerpt: after.replace(/\s+/g, " ").slice(-400) };
+    const notSent = state.state !== "submitted";
+    return { state: state.state, confidence: state.confidence, url: await page.evaluate<string>("location.href"), errors, needsCode: notSent && SECURITY_CODE.test(after), humanCheck: notSent && !SECURITY_CODE.test(after) && HUMAN_CHECK.test(after), excerpt: after.replace(/\s+/g, " ").slice(-400) };
   } finally {
     page.close();
   }
@@ -96,6 +97,9 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
 
 /** The choice on a cookie banner that allows the least. */
 const DECLINE_COOKIES = "^\\s*(necessary only|only necessary|necessary cookies only|use necessary cookies only|reject all|reject|decline|decline all|refuse|deny)\\s*$";
+
+/** A page that asks the person to prove they are not a robot (BambooHR after Submit). Only the person can pass it. */
+export const HUMAN_CHECK = /not a robot|i am human|i'm human|captcha/i;
 
 /** A board that emails a code to confirm a person is applying. Only the person can enter it. */
 export const SECURITY_CODE = /verification code was sent|enter the \S+ code|security code/i;
@@ -139,8 +143,8 @@ export async function watchForConfirmation(jev: JevClient, jobId: string, opts: 
       }
       if (text === last) continue;
       last = text;
-      // The form with its code box still showing is not worth a judgement.
-      if (SECURITY_CODE.test(text)) continue;
+      // The form with its code box or robot check still showing is not worth a judgement.
+      if (SECURITY_CODE.test(text) || HUMAN_CHECK.test(text)) continue;
       const state = await decidePageState(jev, text, await page.evaluate<string>("location.href"), jobId);
       if (state.state === "submitted") return "submitted";
     }

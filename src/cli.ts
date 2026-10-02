@@ -23,7 +23,7 @@ import { loadQueue, saveQueue, sortEntries, updateEntry, QueueStatus } from "./j
 import { formatCost, loadCost } from "./log/cost.js";
 import { appliedRecords, loadRows, manualRecords, saveRows, toRecord, upsertEntry } from "./log/csv.js";
 import { loadProfile } from "./profile/schema.js";
-import { CODE_PREFIX, endIfAbandoned, noteApplied, pipeline, record, resolvePage, submitAndRecord, takeJobs } from "./run/pipeline.js";
+import { endIfAbandoned, HUMAN_PREFIX, noteApplied, pipeline, record, resolvePage, submitAndRecord, takeJobs, waitsForYou } from "./run/pipeline.js";
 import { brief, printFill, printTable } from "./run/print.js";
 import { limiter } from "./util/pace.js";
 
@@ -90,9 +90,9 @@ program
       await noteApplied(sent);
       const done = new Map(loadQueue().entries.map((e) => [e.job.id, e]));
       const count = (...statuses: string[]) => reports.filter((r) => statuses.includes(done.get(r.jobId)?.status ?? "")).length;
-      const codes = reports.filter((r) => (done.get(r.jobId)?.statusReason ?? "").startsWith(CODE_PREFIX)).length;
+      const codes = reports.filter((r) => waitsForYou(done.get(r.jobId)?.statusReason)).length;
       console.log(`\n${count("applied")} applied, ${count("needs_review", "blocked")} left for you, ${count("skipped", "failed")} skipped, ${count("in_progress")} filled and waiting for submit`);
-      if (codes) console.log(`${codes} filled form(s) are waiting for a code that was emailed to you. Run: codes`);
+      if (codes) console.log(`${codes} filled form(s) are waiting for you: a code that was emailed to you, or a robot check. Run: codes`);
       console.log(whereTheRecordIs());
     }
     if (!o.json) console.log(`\nCost of this run\n${formatCost(loadCost(began))}`);
@@ -139,10 +139,10 @@ program
 
 program
   .command("codes")
-  .description("Finish the forms that are waiting for an emailed code. The tool shows each form in turn; you type the code and click Submit; it records the result")
+  .description("Finish the forms that are waiting for you: an emailed code to type, or a robot check to pass. The tool shows each form in turn; you finish it and click Submit; it records the result")
   .action(async () => {
-    const waiting = loadQueue().entries.filter((e) => e.status === "needs_review" && (e.statusReason ?? "").startsWith(CODE_PREFIX));
-    if (!waiting.length) return console.log("No form is waiting for a code.");
+    const waiting = loadQueue().entries.filter((e) => e.status === "needs_review" && waitsForYou(e.statusReason));
+    if (!waiting.length) return console.log("No form is waiting for a code or a robot check.");
     const jev = new JevClient();
     let skip = false;
     if (process.stdin.isTTY) process.stdin.on("data", () => (skip = true));
@@ -153,7 +153,7 @@ program
         console.log(`  Its tab is closed. Fill it again with: apply ${e.job.id} --submit`);
         continue;
       }
-      console.log(`  The form is in front in the tool's Chrome window. Type the code from your email and click Submit.${process.stdin.isTTY ? " Press Enter here to skip this one." : ""}`);
+      console.log(`  The form is in front in the tool's Chrome window. ${(e.statusReason ?? "").startsWith(HUMAN_PREFIX) ? "Pass the robot check" : "Type the code from your email"} and click Submit.${process.stdin.isTTY ? " Press Enter here to skip this one." : ""}`);
       skip = false;
       if ((await watchForConfirmation(jev, e.job.id, { timeoutMs: RUN.codeWaitMs, stop: () => skip })) === "submitted") {
         record(e.job.id, "applied", null);

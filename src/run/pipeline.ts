@@ -103,6 +103,10 @@ export async function resolvePage(jev: JevClient, profile: Profile, entry: Queue
 
 export const CODE_PREFIX = "the board emailed you a code";
 const CODE_REASON = `${CODE_PREFIX} to confirm a person is applying. The filled form is open in the tool's window: type the code, click Submit, then run: codes`;
+export const HUMAN_PREFIX = "the site asks you to confirm you are not a robot";
+const HUMAN_REASON = `${HUMAN_PREFIX}. The filled form is open in the tool's window: pass the check, click Submit, then run: codes`;
+/** True for a job whose filled form is open and waiting for the person: a code to type, or a robot check to pass. */
+export const waitsForYou = (reason: string | null | undefined) => !!reason && (reason.startsWith(CODE_PREFIX) || reason.startsWith(HUMAN_PREFIX));
 
 /**
  * Sites that asked for an emailed code in this run. A site that has started asking will ask every
@@ -140,7 +144,7 @@ export function submitAndRecord(jev: JevClient, id: string, force: boolean, keep
           return false;
         }
         const r = await submitJob(jev, id, force);
-        console.log(`${id}  ${r.needsCode ? "needs your code" : r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
+        console.log(`${id}  ${r.needsCode ? "needs your code" : r.humanCheck ? "needs you to pass a robot check" : r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
         if (r.state === "submitted") {
           record(id, "applied", null);
           if (!keepOpen) await closeJobTab(id);
@@ -150,6 +154,12 @@ export function submitAndRecord(jev: JevClient, id: string, force: boolean, keep
           // Only the person can pass a human check. The tab stays open, filled, for them.
           record(id, "needs_review", CODE_REASON);
           learn(r.url, { emailsCode: true });
+          askingForCodes.add(siteOf(id));
+          return false;
+        }
+        if (r.humanCheck) {
+          // A robot check is the person's to pass. The tab stays open, filled, and the site's other jobs wait for another day.
+          record(id, "needs_review", HUMAN_REASON);
           askingForCodes.add(siteOf(id));
           return false;
         }
