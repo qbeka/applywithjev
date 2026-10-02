@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildPrompt, parseResolution, type OpenField } from "../src/answers/resolve.js";
+import { buildPrompt, buildSystem, candidateContext, parseResolution, type OpenField } from "../src/answers/resolve.js";
 import { ProfileSchema } from "../src/profile/schema.js";
 
 const profile = ProfileSchema.parse(JSON.parse(readFileSync(new URL("../data/profile.example.json", import.meta.url), "utf8")));
@@ -19,18 +19,30 @@ describe("parseResolution", () => {
   });
 });
 
-describe("buildPrompt", () => {
-  const prompt = JSON.parse(buildPrompt(profile, null, [{ label: "Email", value: "ada@example.com" }], open)) as Record<string, any>;
-  it("hands the writer the facts, the standing answers, what is filled and what is open", () => {
-    expect(prompt.candidate.facts).toEqual(profile.facts);
-    expect(prompt.candidate.standingAnswers).toEqual(profile.answers);
-    expect(prompt.candidate.workAuthorization.authorizedCountries).toEqual(["Canada"]);
+describe("the writer's prompt", () => {
+  const system = buildSystem(profile);
+  const context = candidateContext(profile) as Record<string, any>;
+  const prompt = JSON.parse(buildPrompt(null, [{ label: "Email", value: "ada@example.com" }], open)) as Record<string, any>;
+  it("puts the rules and the candidate in the system prompt, which is the same for every form", () => {
+    expect(context.candidate.facts).toEqual(profile.facts);
+    expect(context.candidate.standingAnswers).toEqual(profile.answers);
+    expect(context.candidate.workAuthorization.authorizedCountries).toEqual(["Canada"]);
+    expect(Object.keys(context.bank)).toContain("why_company");
+    expect(system).toContain("Truth comes first.");
+    expect(system).toContain(profile.facts[0] as string);
+    expect(buildSystem(profile)).toBe(system);
+  });
+  it("keeps what changes per form in the prompt: the job, what is filled, what is open", () => {
+    expect(Object.keys(prompt)).toEqual(["job", "already_filled", "open_fields"]);
     expect(prompt.already_filled).toEqual([{ label: "Email", value: "ada@example.com" }]);
     expect(prompt.open_fields[0]).toMatchObject({ selector: "#q1", required: true, maxLength: 500 });
-    expect(Object.keys(prompt.bank)).toContain("why_company");
+  });
+  it("includes the posting when there is one", () => {
+    const entry = { job: { id: "j", source: "s", company: "Acme", title: "SWE Intern", url: "https://x/1", ats: "greenhouse", locations: ["Toronto, ON"], postedAt: null, terms: [], sponsorship: "unknown", degrees: [], category: null, description: "We build rockets." }, fit: null, preFilterReason: null, status: "queued", statusReason: null, attempts: 0, discoveredAt: "", updatedAt: "", appliedAt: null, notes: null } as unknown as Parameters<typeof buildPrompt>[0];
+    expect(JSON.parse(buildPrompt(entry, [], open)).job).toMatchObject({ company: "Acme", description: "We build rockets." });
   });
   it("carries no secret and no resume path", () => {
-    const text = JSON.stringify(prompt);
+    const text = system + JSON.stringify(prompt);
     expect(text).not.toMatch(/sk-or-v1-|OPENROUTER/);
     expect(text).not.toContain(profile.resume.path);
   });

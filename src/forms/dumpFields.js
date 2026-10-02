@@ -4,6 +4,8 @@
 (() => {
   // Password inputs are never dumped: a page that asks for one is a login or account page, not an application form.
   const SKIP_TYPES = new Set(["hidden", "submit", "button", "reset", "image", "search", "password"]);
+  // Long enough for a question that follows a paragraph of legal text: the question is usually at the end.
+  const LABEL_MAX = 700;
   const seenRadio = new Set();
   const fields = [];
   const out = { url: location.href, title: document.title, context: "", fields, submitSelectors: [] };
@@ -58,7 +60,7 @@
         // The page title is not a question, and anything above it belongs to another part of the page.
         if (sib.tagName === "H1" || sib.querySelector("h1")) return "";
         const t = text(sib);
-        if (t && t.length <= 300 && !GENERIC.test(t) && !sib.querySelector("input, select, textarea, [role=combobox]")) return t;
+        if (t && t.length <= LABEL_MAX && !GENERIC.test(t) && !sib.querySelector("input, select, textarea, [role=combobox]")) return t;
         sib = sib.previousElementSibling;
       }
     }
@@ -67,7 +69,7 @@
   const cleanLabel = (el, label) => {
     const stripped = label.replace(/^(select\.\.\.|select an option|select|search|textbox)\s+/i, "").trim();
     if (stripped && !GENERIC.test(stripped)) return stripped;
-    return questionFor(el).replace(/\s*[*✱]\s*$/, "").slice(0, 300) || label;
+    return questionFor(el).replace(/\s*[*✱]\s*$/, "").slice(0, LABEL_MAX) || label;
   };
   const labelFor = (el) => {
     const bits = [];
@@ -86,7 +88,7 @@
         cur = cur.parentElement; depth++;
       }
     }
-    return [...new Set(bits.map((b) => b.replace(/\s*[*✱]\s*$/, "").replace(/\s*[*✱]\s+/g, " ").trim()).filter(Boolean))].join(" ").slice(0, 300);
+    return [...new Set(bits.map((b) => b.replace(/\s*[*✱]\s*$/, "").replace(/\s*[*✱]\s+/g, " ").trim()).filter(Boolean))].join(" ").slice(0, LABEL_MAX);
   };
   const hintFor = (el) => {
     const by = el.getAttribute("aria-describedby");
@@ -220,7 +222,7 @@
       selector: selectorFor(c),
       kind: "radio",
       name: c.getAttribute("data-field-path") || "",
-      label: label.replace(/\s*[*✱]\s*$/, "").slice(0, 300),
+      label: label.replace(/\s*[*✱]\s*$/, "").slice(0, LABEL_MAX),
       hint: hintFor(c),
       placeholder: "",
       required: /required/i.test(labelEl?.className || "") || /[*✱]\s*$/.test(labelEl ? text(labelEl) : label) || c.getAttribute("aria-required") === "true",

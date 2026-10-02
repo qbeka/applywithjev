@@ -18,7 +18,7 @@ export type PageState = {
   requiresCoverLetter: number;
 };
 
-export async function decidePageState(jev: JevClient, pageText: string, url: string): Promise<PageState> {
+export async function decidePageState(jev: JevClient, pageText: string, url: string, jobId = ""): Promise<PageState> {
   const answers = await jev.decide(
     { url, text: truncate(pageText.replace(/\s+/g, " "), JEV.maxPageTextChars) },
     {
@@ -37,7 +37,7 @@ export async function decidePageState(jev: JevClient, pageText: string, url: str
       requires_references: noul("Does the form require references (names and contact details of referees)?"),
       requires_cover_letter: noul("Is a cover letter required (not optional)?"),
     },
-    "page-state",
+    jobId ? `page-state:${jobId}` : "page-state",
   );
   const s = answers.state as ChoiceAnswer;
   return {

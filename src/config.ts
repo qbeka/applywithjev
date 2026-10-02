@@ -22,6 +22,8 @@ export const PATHS = {
   cache: path.join(ROOT, "data", "cache"),
   walledHosts: path.join(ROOT, "data", "cache", "walled-hosts.json"),
   runs: path.join(ROOT, "data", "runs"),
+  jevUsage: path.join(ROOT, "data", "runs", "jev-usage.jsonl"),
+  writerUsage: path.join(ROOT, "data", "runs", "writer-usage.jsonl"),
   imports: path.join(ROOT, "data", "imports"),
   resumeDir: path.join(ROOT, "data", "resume"),
   browserScripts: path.join(ROOT, "src", "forms"),
@@ -172,8 +174,10 @@ export const WRITER = {
   model: "claude-sonnet-5-5",
   effort: "high",
   timeoutMs: 180_000,
-  /** Job description characters handed to the writer. */
-  maxDescriptionChars: 6_000,
+  /** Job description characters handed to the writer. The posting is most of what each call costs. */
+  maxDescriptionChars: 4_000,
+  /** Posting characters per job when writing the two sheet notes, where the opening paragraph is enough. */
+  maxNoteChars: 1_500,
 } as const;
 
 export const RUN = {

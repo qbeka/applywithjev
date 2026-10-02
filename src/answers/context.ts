@@ -3,10 +3,24 @@
  * the facts it may use, the job, and the closest bank drafts.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { PATHS } from "../config.js";
+import { PATHS, WRITER } from "../config.js";
 import type { QueueEntry } from "../jobs/queue.js";
 import type { Profile } from "../profile/schema.js";
 import { BANK_DRAFTS, BANK_INTENTS, closestIntents, type BankIntent } from "./bank.js";
+
+/** The posting as the writer sees it. */
+export function jobContext(entry: QueueEntry | null) {
+  return entry
+    ? {
+        company: entry.job.company,
+        title: entry.job.title,
+        locations: entry.job.locations,
+        url: entry.job.url,
+        description: (entry.job.description ?? "").slice(0, WRITER.maxDescriptionChars),
+        fitReasons: entry.fit?.reasons ?? [],
+      }
+    : null;
+}
 
 export function answerContext(profile: Profile, entry: QueueEntry | null, question: string) {
   const voice = existsSync(PATHS.voice) ? readFileSync(PATHS.voice, "utf8") : "";
@@ -16,16 +30,7 @@ export function answerContext(profile: Profile, entry: QueueEntry | null, questi
     question,
     closestDrafts: intents.map((i) => ({ intent: i, description: BANK_INTENTS[i], draft: BANK_DRAFTS[i] })),
     allIntents: Object.keys(BANK_INTENTS),
-    job: entry
-      ? {
-          company: entry.job.company,
-          title: entry.job.title,
-          locations: entry.job.locations,
-          url: entry.job.url,
-          description: (entry.job.description ?? "").slice(0, 4000),
-          fitReasons: entry.fit?.reasons ?? [],
-        }
-      : null,
+    job: jobContext(entry),
     candidate: {
       name: `${profile.name.first} ${profile.name.last}`,
       summary: profile.summary,

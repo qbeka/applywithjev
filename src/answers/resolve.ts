@@ -5,12 +5,13 @@
  * JSON object. It may also say the job should not be applied to, with a reason.
  */
 import { spawn } from "node:child_process";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { z } from "zod";
-import { WRITER } from "../config.js";
+import { PATHS, WRITER } from "../config.js";
 import type { QueueEntry } from "../jobs/queue.js";
 import type { Profile } from "../profile/schema.js";
 import { BANK_DRAFTS, BANK_INTENTS } from "./bank.js";
-import { answerContext } from "./context.js";
+import { answerContext, jobContext } from "./context.js";
 
 export type OpenField = {
   selector: string;
@@ -59,29 +60,36 @@ const SYSTEM = [
   "Answer every open field you can, even when the verdict is needs_review, so a person only has to finish what is left.",
 ].join("\n");
 
-export function buildPrompt(profile: Profile, entry: QueueEntry | null, filled: { label: string; value: string }[], open: OpenField[]): string {
-  const ctx = answerContext(profile, entry, "");
-  return JSON.stringify(
-    {
-      voice_rules: ctx.voice,
-      candidate: {
-        ...ctx.candidate,
-        education: profile.education,
-        address: `${profile.address.city}, ${profile.address.region}, ${profile.address.country}`,
-        spokenLanguages: profile.spokenLanguages,
-        demographics: profile.demographics,
-        preferences: profile.preferences,
-        workAuthorization: profile.workAuthorization,
-      },
-      /** Starting drafts for common questions. Adapt one to the question and the company; text in braces is for you to write. */
-      bank: Object.fromEntries(Object.keys(BANK_INTENTS).map((k) => [k, { asks: BANK_INTENTS[k], draft: BANK_DRAFTS[k] }])),
-      job: ctx.job ? { ...ctx.job, description: ctx.job.description.slice(0, WRITER.maxDescriptionChars) } : null,
-      already_filled: filled,
-      open_fields: open,
+/** Everything about the candidate that is the same for every job: the voice guide, the facts and the starting drafts. */
+export function candidateContext(profile: Profile): Record<string, unknown> {
+  const ctx = answerContext(profile, null, "");
+  return {
+    voice_rules: ctx.voice,
+    candidate: {
+      ...ctx.candidate,
+      education: profile.education,
+      address: `${profile.address.city}, ${profile.address.region}, ${profile.address.country}`,
+      spokenLanguages: profile.spokenLanguages,
+      demographics: profile.demographics,
+      preferences: profile.preferences,
+      workAuthorization: profile.workAuthorization,
     },
-    null,
-    1,
-  );
+    /** Starting drafts for common questions. Adapt one to the question and the company; text in braces is for you to write. */
+    bank: Object.fromEntries(Object.keys(BANK_INTENTS).map((k) => [k, { asks: BANK_INTENTS[k], draft: BANK_DRAFTS[k] }])),
+  };
+}
+
+/**
+ * The system prompt: the rules, then the candidate. It is identical for every job in a run, so the
+ * model provider can cache it and each further form pays full price only for its own posting and fields.
+ */
+export function buildSystem(profile: Profile): string {
+  return `${SYSTEM}\n\nThe candidate, the same for every form:\n${JSON.stringify(candidateContext(profile), null, 1)}`;
+}
+
+/** The part that changes per form: the job, what is already filled, and the open fields. */
+export function buildPrompt(entry: QueueEntry | null, filled: { label: string; value: string }[], open: OpenField[]): string {
+  return JSON.stringify({ job: jobContext(entry), already_filled: filled, open_fields: open }, null, 1);
 }
 
 /** Pulls the JSON object out of the writer's reply, whether or not it wrapped it in a code fence. */
@@ -93,30 +101,68 @@ export function parseResolution(text: string): Resolution {
 }
 
 const LOG_SYSTEM = [
-  "You write two short cells for a job-application tracking sheet. Reply with one JSON object and nothing else:",
-  "{\"what_they_do\": string, \"why_fit\": string}.",
+  "You write two short cells per job for a job-application tracking sheet. You are given several jobs and one candidate.",
+  "Reply with one JSON object and nothing else: {\"notes\": [{\"id\": string, \"what_they_do\": string, \"why_fit\": string}]}, one entry per job, with the job's own id.",
   "what_they_do: one plain sentence on what the company builds, from the posting. If the posting says nothing about it, leave it empty.",
   "why_fit: one plain sentence tying a concrete fact about the candidate to this role, written as the candidate's own note: start with the fact, and never write \"the candidate\", \"he\" or \"she\".",
-  "Use only the posting and the candidate's facts. No em dashes, no hype words, under 30 words each.",
+  "Use only the postings and the candidate's facts. No em dashes, no hype words, under 30 words each.",
 ].join("\n");
 
-const LogLines = z.object({ what_they_do: z.string().default(""), why_fit: z.string().default("") });
+const LogNotes = z.object({ notes: z.array(z.object({ id: z.string(), what_they_do: z.string().default(""), why_fit: z.string().default("") })).default([]) });
+export type LogNote = { whatTheyDo: string; whyFit: string };
 
-/** The sheet's "What They Do" and "Why You're a Fit" cells for a job that was just applied to. Empty strings if the writer fails: the log must not block on it. */
-export async function logLines(profile: Profile, entry: QueueEntry): Promise<{ whatTheyDo: string; whyFit: string }> {
+/**
+ * The sheet's "What They Do" and "Why You're a Fit" cells for jobs that were just applied to,
+ * all in one writer call: one call for ten jobs costs a fraction of ten calls.
+ * Returns nothing for a job the writer skipped, and an empty map if it fails: the log must not block on it.
+ */
+export async function logNotes(profile: Profile, entries: QueueEntry[]): Promise<Map<string, LogNote>> {
+  const out = new Map<string, LogNote>();
+  if (!entries.length) return out;
   try {
-    const ctx = answerContext(profile, entry, "");
-    const text = await runWriter(JSON.stringify({ job: ctx.job ? { ...ctx.job, description: ctx.job.description.slice(0, WRITER.maxDescriptionChars) } : null, candidate: { summary: profile.summary, facts: profile.facts } }), LOG_SYSTEM);
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    const parsed = LogLines.parse(JSON.parse(text.slice(start, end + 1)));
-    return { whatTheyDo: parsed.what_they_do, whyFit: parsed.why_fit };
+    const jobs = entries.map((e) => ({ id: e.job.id, company: e.job.company, title: e.job.title, posting: (e.job.description ?? "").slice(0, WRITER.maxNoteChars) }));
+    const text = await runWriter(JSON.stringify({ candidate: { summary: profile.summary, facts: profile.facts }, jobs }, null, 1), LOG_SYSTEM, { purpose: "log", jobId: `batch of ${entries.length}` });
+    const parsed = LogNotes.parse(JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)));
+    for (const n of parsed.notes) out.set(n.id, { whatTheyDo: n.what_they_do, whyFit: n.why_fit });
   } catch {
-    return { whatTheyDo: "", whyFit: "" };
+    /* the notes are a convenience */
+  }
+  return out;
+}
+
+export type WriterCall = { at: string; purpose: "resolve" | "log"; jobId: string; model: string; inputTokens: number; cacheWriteTokens: number; cacheReadTokens: number; outputTokens: number; costUsd: number; ms: number };
+
+/** What the writer has used in this process. costUsd is what the calls would cost at API prices; on a Claude subscription they draw on the plan instead. */
+export const writerUsage = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+
+type Envelope = { result?: string; is_error?: boolean; total_cost_usd?: number; duration_ms?: number; usage?: { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number; output_tokens?: number } };
+
+function recordWriterCall(envelope: Envelope, meta: { purpose: WriterCall["purpose"]; jobId: string }): void {
+  const u = envelope.usage ?? {};
+  const call: WriterCall = {
+    at: new Date().toISOString(),
+    ...meta,
+    model: WRITER.model,
+    inputTokens: u.input_tokens ?? 0,
+    cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+    cacheReadTokens: u.cache_read_input_tokens ?? 0,
+    outputTokens: u.output_tokens ?? 0,
+    costUsd: envelope.total_cost_usd ?? 0,
+    ms: envelope.duration_ms ?? 0,
+  };
+  writerUsage.calls += 1;
+  writerUsage.inputTokens += call.inputTokens + call.cacheWriteTokens + call.cacheReadTokens;
+  writerUsage.outputTokens += call.outputTokens;
+  writerUsage.costUsd += call.costUsd;
+  try {
+    mkdirSync(PATHS.runs, { recursive: true });
+    appendFileSync(PATHS.writerUsage, JSON.stringify(call) + "\n");
+  } catch {
+    /* usage logging is best effort */
   }
 }
 
-function runWriter(prompt: string, system = SYSTEM): Promise<string> {
+function runWriter(prompt: string, system: string, meta: { purpose: WriterCall["purpose"]; jobId: string }): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       WRITER.command,
@@ -139,7 +185,8 @@ function runWriter(prompt: string, system = SYSTEM): Promise<string> {
       clearTimeout(timer);
       if (code !== 0) return reject(new Error(`the writer exited with ${code}: ${err.slice(0, 300)}`));
       try {
-        const envelope = JSON.parse(out) as { result?: string; is_error?: boolean };
+        const envelope = JSON.parse(out) as Envelope;
+        recordWriterCall(envelope, meta);
         if (envelope.is_error || typeof envelope.result !== "string") return reject(new Error(`the writer failed: ${String(envelope.result).slice(0, 300)}`));
         resolve(envelope.result);
       } catch {
@@ -152,7 +199,7 @@ function runWriter(prompt: string, system = SYSTEM): Promise<string> {
 
 export async function resolveOpenFields(profile: Profile, entry: QueueEntry | null, filled: { label: string; value: string }[], open: OpenField[]): Promise<Resolution> {
   if (!open.length) return { verdict: "ready", reason: "", answers: [] };
-  const res = parseResolution(await runWriter(buildPrompt(profile, entry, filled, open)));
+  const res = parseResolution(await runWriter(buildPrompt(entry, filled, open), buildSystem(profile), { purpose: "resolve", jobId: entry?.job.id ?? "" }));
   const known = new Set(open.map((f) => f.selector));
   return { ...res, answers: res.answers.filter((a) => known.has(a.selector)) };
 }

@@ -63,13 +63,12 @@ export function loadReport(jobId: string): FillReport {
  * Required fields the page shows empty. A group of checkboxes that share a name is one question:
  * it is answered once any box in it is ticked, so the unticked ones are not missing.
  */
-function emptyRequired(d: FieldsDump, plan: FillPlan, shown: string[], states: ControlState[]): string[] {
+function emptyRequiredFields(d: FieldsDump, plan: FillPlan, shown: string[], states: ControlState[]): FillPlan["fields"] {
   const nameOf = new Map(d.fields.map((f) => [f.selector, f.kind === "checkbox" ? f.name : ""]));
   const answeredGroups = new Set(plan.fields.filter((f, i) => f.kind === "checkbox" && shown[i]).map((f) => nameOf.get(f.selector)).filter((n): n is string => !!n));
-  return plan.fields
-    .filter((f, i) => f.required && !shown[i] && states[i] !== "off" && f.action !== "upload" && !(f.kind === "checkbox" && answeredGroups.has(nameOf.get(f.selector) ?? "")))
-    .map((f) => f.label);
+  return plan.fields.filter((f, i) => f.required && !shown[i] && states[i] !== "off" && f.action !== "upload" && !(f.kind === "checkbox" && answeredGroups.has(nameOf.get(f.selector) ?? "")));
 }
+const emptyRequired = (d: FieldsDump, plan: FillPlan, shown: string[], states: ControlState[]) => emptyRequiredFields(d, plan, shown, states).map((f) => f.label);
 
 const isReady = (r: Pick<FillReport, "state" | "drafts" | "reviews" | "failed" | "missingRequired">) => r.state === "filled" && !r.drafts.length && !r.reviews.length && !r.failed.length && !r.missingRequired.length;
 
@@ -469,7 +468,7 @@ export async function fillJob(jev: JevClient, profile: Profile, job: Job): Promi
     saveSession({ ...loadSession(), [job.id]: { targetId: target.id, url: d.url } });
     if (!isApplicationForm(d) && !d.hasPassword) {
       // Job boards answer bursts with an error page. One unhurried second try settles most of them.
-      const first = await decidePageState(jev, await page.evaluate<string>("window.__awj.pageText()"), d.url);
+      const first = await decidePageState(jev, await page.evaluate<string>("window.__awj.pageText()"), d.url, job.id);
       if (first.state === "error" || first.state === "other") {
         trace(`${job.company}: page looked like ${first.state}, retrying in ${BROWSER.retryAfterMs}ms`);
         await sleep(BROWSER.retryAfterMs);
@@ -481,7 +480,7 @@ export async function fillJob(jev: JevClient, profile: Profile, job: Job): Promi
       return done({ ...base, url: d.url, state: "blocked", reason: "login or account required", fields: [], drafts: [], reviews: [], failed: [], missingRequired: [], seconds: (Date.now() - started) / 1000, jevCostUsd: 0 });
     }
     if (!isApplicationForm(d)) {
-      const state = await decidePageState(jev, await page.evaluate<string>("window.__awj.pageText()"), d.url);
+      const state = await decidePageState(jev, await page.evaluate<string>("window.__awj.pageText()"), d.url, job.id);
       return done({ ...base, url: d.url, state: "blocked", reason: `no form found, page looks like: ${state.state}`, fields: [], drafts: [], reviews: [], failed: [], missingRequired: [], seconds: (Date.now() - started) / 1000, jevCostUsd: 0 });
     }
     await readDropdownOptions(page, d.fields);
@@ -651,8 +650,7 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
     for (const x of r.failed) if (dumped(x.selector)?.kind !== "file") add(x.selector, x.why);
     const before = await shownValues(page, plan.fields.map((f) => f.selector));
     const statesBefore = await controlStates(page, plan.fields.map((f) => f.selector));
-    const stillEmpty = new Set(emptyRequired(d, plan, before, statesBefore));
-    for (const f of plan.fields) if (stillEmpty.has(f.label)) add(f.selector, "required and still empty");
+    for (const f of emptyRequiredFields(d, plan, before, statesBefore)) add(f.selector, "required and still empty");
     const filled = plan.fields.map((f, i) => ({ label: f.label, value: before[i] ?? "" })).filter((f) => f.value && f.label);
     const resolution = await resolveOpenFields(profile, entry, filled, [...open.values()]);
     const fills = resolution.answers
@@ -662,6 +660,7 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
     const after = await shownValues(page, plan.fields.map((f) => f.selector));
     const states = await controlStates(page, plan.fields.map((f) => f.selector));
     const answered = new Set(resolution.answers.map((a) => a.selector));
+    const stillRequired = new Set(emptyRequiredFields(d, plan, after, states).map((f) => f.selector));
     const labelOf = (selector: string) => plan.fields.find((f) => f.selector === selector)?.label ?? selector;
     const fields = plan.fields.map((f, i) => {
       const was = r.fields[i];
@@ -672,11 +671,8 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
       ...r,
       fields,
       drafts: plan.drafts.filter((x) => !after[plan.fields.findIndex((f) => f.selector === x.selector)]),
-      // An open field Claude chose to leave blank is settled, unless it is required.
-      reviews: plan.reviews.filter((x) => {
-        const i = plan.fields.findIndex((f) => f.selector === x.selector);
-        return !after[i] && (plan.fields[i]?.required ?? false) && states[i] !== "off";
-      }),
+      // An open field Claude chose to leave blank is settled, unless it is still a required field with nothing in it.
+      reviews: plan.reviews.filter((x) => stillRequired.has(x.selector)),
       failed: [
         ...failedRaw,
         // Anything the plan or Claude wanted in the form that the page does not show.
@@ -753,7 +749,7 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
     await install(page);
     after = await page.evaluate<string>("window.__awj.pageText()");
     const url = await page.evaluate<string>("location.href");
-    const state = await decidePageState(jev, after, url);
+    const state = await decidePageState(jev, after, url, jobId);
     return { state: state.state, confidence: state.confidence, url, errors: await page.evaluate<string[]>("window.__awj.errors()"), excerpt: after.replace(/\s+/g, " ").slice(0, 400) };
   } finally {
     page.close();

@@ -181,6 +181,9 @@
         const a = adapter(el);
         if (a && a.shape === "select" && typeof a.p.getValue === "function") return a.p.getValue().map((o) => labelOf(a, o)).join(", ");
         if (a && a.shape === "search") return a.p.selectedItemText || el.value || "";
+        // Selectize keeps the picks as items beside an input that stays empty.
+        const selectize = el.closest(".selectize-input");
+        if (selectize) return [...selectize.querySelectorAll(".item")].map(text).join(", ") || el.value || "";
         const c = control(el);
         const single = c.querySelector('[class*="single-value"], [class*="singleValue"]');
         const multi = [...c.querySelectorAll('[class*="multi-value__label"], [class*="multiValue"]')].map(text).join(", ");

@@ -54,7 +54,7 @@ export class JevClient {
     this.endpoint = opts.endpoint ?? JEV.endpoint;
     this.model = opts.model ?? JEV.model;
     this.spendCapUsd = opts.spendCapUsd ?? JEV.runSpendCapUsd;
-    this.usageLog = opts.usageLog === undefined ? path.join(PATHS.runs, "jev-usage.jsonl") : opts.usageLog;
+    this.usageLog = opts.usageLog === undefined ? PATHS.jevUsage : opts.usageLog;
     this.siteUrl = opts.siteUrl ?? process.env.OPENROUTER_SITE_URL;
     this.siteName = opts.siteName ?? process.env.OPENROUTER_SITE_NAME;
   }

@@ -239,7 +239,7 @@ export async function mapForm(jev: JevClient, profile: Profile, job: Job, dump: 
   for (let i = 0; i < askable.length; i += FORM.fieldsPerCall) {
     const chunk = askable.slice(i, i + FORM.fieldsPerCall);
     const questions = questionsFor(chunk);
-    const answers = Object.keys(questions).length ? await jev.decide(buildFormState(profile, job, dump, chunk), questions, `map-form:${job.company}`) : {};
+    const answers = Object.keys(questions).length ? await jev.decide(buildFormState(profile, job, dump, chunk), questions, `map-form:${job.id}:${job.company}`) : {};
     for (const f of chunk) planned.push(planField(f, answers[f.id], profile, job));
   }
   for (const f of dump.fields.filter((f) => f.kind === "file")) {

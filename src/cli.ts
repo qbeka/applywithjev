@@ -22,7 +22,8 @@ import { ensureBrowser } from "./browser/cdp.js";
 import { closeJobTab, fillJob, inspect, loadReport, resolveJob, setValues, submitJob, type Fill, type FillReport } from "./browser/formRunner.js";
 import { hostIs, type Job } from "./jobs/normalize.js";
 import { rememberWalledHost } from "./jobs/walled.js";
-import { logLines } from "./answers/resolve.js";
+import { logNotes } from "./answers/resolve.js";
+import { formatCost, loadCost } from "./log/cost.js";
 
 loadEnv();
 const program = new Command();
@@ -177,9 +178,13 @@ async function resolveAll(reports: FillReport[]): Promise<FillReport[]> {
   const q = loadQueue();
   const out = [...reports];
   const todo = reports.map((r, i) => ({ r, i })).filter(({ r }) => r.state === "filled" && !r.ready);
-  for (let at = 0; at < todo.length; at += RUN.writerConcurrency) {
+  // The first form goes alone. Its call stores the candidate's context in the provider's cache,
+  // and every later call reads it from there at a tenth of the price.
+  const batches = [todo.slice(0, 1)];
+  for (let at = 1; at < todo.length; at += RUN.writerConcurrency) batches.push(todo.slice(at, at + RUN.writerConcurrency));
+  for (const batch of batches) {
     await Promise.all(
-      todo.slice(at, at + RUN.writerConcurrency).map(async ({ r, i }) => {
+      batch.map(async ({ r, i }) => {
         try {
           out[i] = await resolveJob(profile, q.entries.find((e) => e.job.id === r.jobId) ?? null, r.jobId);
         } catch (err) {
@@ -228,14 +233,17 @@ program
   .option("--dry", "a rehearsal: fill and resolve, record nothing, submit nothing, close the tabs")
   .option("--json")
   .action(async (ids: string[], o: RunOptions & { submit?: boolean }) => {
+    const began = new Date().toISOString();
     const reports = await resolveAll(await fillAll(takeJobs(ids, o)));
     if (o.json) console.log(JSON.stringify(reports, null, 2));
     else reports.forEach(printFill);
     if (o.dry) {
       for (const r of reports) await closeJobTab(r.jobId);
+      if (!o.json) console.log(`\nCost of this run\n${formatCost(loadCost(began))}`);
       return;
     }
     const jev = new JevClient();
+    const sent: string[] = [];
     for (const r of reports) {
       if (r.state === "blocked") {
         const e = record(r.jobId, "blocked", r.reason);
@@ -248,11 +256,23 @@ program
       } else if (!r.ready) {
         record(r.jobId, "needs_review", notReady(r));
       } else if (o.submit) {
-        await submitAndRecord(jev, r.jobId, false);
+        if (await submitAndRecord(jev, r.jobId, false)) sent.push(r.jobId);
       }
     }
+    await noteApplied(sent);
     const done = reports.map((r) => loadQueue().entries.find((e) => e.job.id === r.jobId)).filter((e): e is QueueEntry => !!e);
+    console.log(`\nCost of this run\n${formatCost(loadCost(began))}`);
     console.log(`\n${done.filter((e) => e.status === "applied").length} applied, ${done.filter((e) => e.status === "needs_review").length} need review, ${done.filter((e) => e.status === "blocked" || e.status === "skipped" || e.status === "failed").length} blocked, skipped or failed, ${done.filter((e) => e.status === "in_progress").length} filled and waiting for submit`);
+  });
+
+program
+  .command("cost")
+  .description("What the tool has spent on JEV and on Claude, by purpose, and per form")
+  .option("--since <iso>", "count only calls at or after this time, for example 2026-10-02T16:00:00Z")
+  .option("--json")
+  .action((o: { since?: string; json?: boolean }) => {
+    const c = loadCost(o.since ?? "");
+    console.log(o.json ? JSON.stringify(c, null, 2) : formatCost(c));
   });
 
 program
@@ -302,7 +322,9 @@ program
   .option("--force", "submit even though the form is not marked ready")
   .action(async (ids: string[], o: { keepOpen?: boolean; force?: boolean }) => {
     const jev = new JevClient();
-    for (const id of ids) await submitAndRecord(jev, id, !!o.force, !!o.keepOpen);
+    const sent: string[] = [];
+    for (const id of ids) if (await submitAndRecord(jev, id, !!o.force, !!o.keepOpen)) sent.push(id);
+    await noteApplied(sent);
   });
 
 program
@@ -370,16 +392,14 @@ const notReady = (r: FillReport) =>
     : [...r.missingRequired.map((l) => `empty: ${l.slice(0, 60)}`), ...r.failed.map((f) => `did not land: ${f.label.slice(0, 60)}`), ...r.reviews.map((x) => `unsure: ${x.label.slice(0, 60)}`), ...r.drafts.map((x) => `unwritten: ${x.label.slice(0, 60)}`)].join("; ") || (r.reason ?? "not verified");
 
 /** Submits one ready form and records what the page became: applied, or failed with what the page said. */
-async function submitAndRecord(jev: JevClient, id: string, force: boolean, keepOpen = false): Promise<void> {
+async function submitAndRecord(jev: JevClient, id: string, force: boolean, keepOpen = false): Promise<boolean> {
   try {
     const r = await submitJob(jev, id, force);
     console.log(`${id}  ${r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
     if (r.state === "submitted") {
-      const applied = record(id, "applied", null);
+      record(id, "applied", null);
       if (!keepOpen) await closeJobTab(id);
-      // The two sheet cells a person would otherwise write by hand.
-      const lines = await logLines(loadProfile(), applied);
-      if (lines.whatTheyDo || lines.whyFit) saveRows(upsertEntry(loadRows(), applied, { "What They Do": lines.whatTheyDo, "Why You're a Fit": lines.whyFit }));
+      return true;
     } else {
       if (r.errors.length) console.log(`  errors: ${r.errors.join(" | ")}`);
       console.log(`  page: ${r.excerpt}`);
@@ -388,6 +408,20 @@ async function submitAndRecord(jev: JevClient, id: string, force: boolean, keepO
   } catch (err) {
     console.log(`${id}  not submitted: ${err instanceof Error ? err.message : String(err)}`);
   }
+  return false;
+}
+
+/** Writes the two sheet cells a person would otherwise fill in by hand, for every job just applied to, in one writer call. */
+async function noteApplied(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const entries = loadQueue().entries.filter((e) => ids.includes(e.job.id));
+  const notes = await logNotes(loadProfile(), entries);
+  let rows = loadRows();
+  for (const e of entries) {
+    const n = notes.get(e.job.id);
+    if (n && (n.whatTheyDo || n.whyFit)) rows = upsertEntry(rows, e, { "What They Do": n.whatTheyDo, "Why You're a Fit": n.whyFit });
+  }
+  saveRows(rows);
 }
 
 const hostOf = (url: string) => {
