@@ -4,28 +4,36 @@
   "apply.workable.com": {
    "controls": {
     "text": {
-     "method": "script",
-     "worked": 4
+     "method": "typed",
+     "worked": 22
     },
     "email": {
      "method": "script",
-     "worked": 4
+     "worked": 28
     },
     "tel:intl-tel": {
      "method": "script",
-     "worked": 4
+     "worked": 28
     },
     "textarea": {
      "method": "script",
      "worked": 3
+    },
+    "radio:label-drawn": {
+     "method": "script",
+     "worked": 24
+    },
+    "combobox": {
+     "method": "script",
+     "worked": 15
     }
    },
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
    "codeOn": "",
-   "forms": 4,
-   "ready": 1,
+   "forms": 19,
+   "ready": 9,
    "trouble": {},
    "updated": "2026-10-02"
   },
@@ -33,19 +41,19 @@
    "controls": {
     "text": {
      "method": "script",
-     "worked": 16
+     "worked": 4
     },
     "combobox:testid-select": {
      "method": "script",
-     "worked": 9
+     "worked": 4
     },
     "combobox": {
      "method": "clicked",
-     "worked": 16
+     "worked": 2
     },
     "radio:drawn-radio": {
      "method": "script",
-     "worked": 16
+     "worked": 4
     },
     "checkbox:label-drawn": {
      "method": "script",
@@ -56,8 +64,8 @@
    "pages": 1,
    "emailsCode": false,
    "codeOn": "",
-   "forms": 10,
-   "ready": 9,
+   "forms": 13,
+   "ready": 11,
    "trouble": {},
    "updated": "2026-10-02"
   },
@@ -124,19 +132,19 @@
    "controls": {
     "text": {
      "method": "script",
-     "worked": 2
+     "worked": 5
     },
     "email": {
      "method": "script",
-     "worked": 2
+     "worked": 5
     },
     "select": {
      "method": "script",
-     "worked": 2
+     "worked": 5
     },
     "checkbox": {
      "method": "script",
-     "worked": 2
+     "worked": 5
     },
     "tel:intl-tel": {
      "method": "typed",
@@ -147,12 +155,12 @@
    "pages": 1,
    "emailsCode": false,
    "codeOn": "",
-   "forms": 10,
-   "ready": 5,
+   "forms": 13,
+   "ready": 7,
    "trouble": {
     "tel:intl-tel": {
      "why": "the page did not keep the value",
-     "count": 2
+     "count": 5
     }
    },
    "updated": "2026-10-02"
@@ -253,31 +261,31 @@
    "controls": {
     "text": {
      "method": "script",
-     "worked": 48
+     "worked": 9
     },
     "email": {
      "method": "script",
-     "worked": 48
+     "worked": 9
     },
     "radio": {
      "method": "script",
-     "worked": 24
+     "worked": 6
     },
     "radio:buttons": {
      "method": "script",
-     "worked": 22
+     "worked": 4
     },
     "tel": {
      "method": "script",
-     "worked": 26
+     "worked": 6
     },
     "url": {
      "method": "script",
-     "worked": 21
+     "worked": 6
     },
     "combobox": {
      "method": "script",
-     "worked": 25
+     "worked": 5
     },
     "select": {
      "method": "script",
@@ -285,7 +293,7 @@
     },
     "checkbox": {
      "method": "script",
-     "worked": 23
+     "worked": 3
     },
     "number": {
      "method": "script",
@@ -293,15 +301,15 @@
     },
     "textarea": {
      "method": "script",
-     "worked": 3
+     "worked": 1
     }
    },
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
    "codeOn": "",
-   "forms": 56,
-   "ready": 48,
+   "forms": 65,
+   "ready": 57,
    "trouble": {},
    "updated": "2026-10-02"
   },
@@ -309,27 +317,27 @@
    "controls": {
     "text": {
      "method": "script",
-     "worked": 2
+     "worked": 6
     },
     "tel": {
      "method": "script",
-     "worked": 1
+     "worked": 4
     },
     "select": {
      "method": "script",
-     "worked": 1
+     "worked": 4
     },
     "radio:label-drawn": {
      "method": "script",
-     "worked": 1
+     "worked": 3
     }
    },
    "signIn": false,
    "pages": 2,
    "emailsCode": false,
    "codeOn": "",
-   "forms": 1,
-   "ready": 1,
+   "forms": 5,
+   "ready": 3,
    "trouble": {},
    "updated": "2026-10-02"
   },
@@ -341,23 +349,23 @@
     },
     "text": {
      "method": "script",
-     "worked": 9
+     "worked": 8
     },
     "email": {
      "method": "script",
-     "worked": 9
+     "worked": 8
     },
     "combobox": {
      "method": "clicked",
-     "worked": 9
+     "worked": 6
     },
     "textarea": {
      "method": "script",
-     "worked": 7
+     "worked": 3
     },
     "select:select2": {
      "method": "script",
-     "worked": 2
+     "worked": 1
     },
     "radio": {
      "method": "script",
@@ -365,15 +373,15 @@
     },
     "checkbox": {
      "method": "script",
-     "worked": 2
+     "worked": 5
     }
    },
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
    "codeOn": "",
-   "forms": 9,
-   "ready": 9,
+   "forms": 16,
+   "ready": 12,
    "trouble": {},
    "updated": "2026-10-02"
   },
@@ -401,19 +409,23 @@
    "controls": {
     "text": {
      "method": "script",
-     "worked": 1
+     "worked": 6
     },
     "radio": {
      "method": "script",
-     "worked": 1
+     "worked": 6
+    },
+    "combobox:menu-button": {
+     "method": "clicked",
+     "worked": 2
     }
    },
    "signIn": false,
    "pages": 1,
    "emailsCode": false,
    "codeOn": "",
-   "forms": 0,
-   "ready": 0,
+   "forms": 4,
+   "ready": 4,
    "trouble": {},
    "updated": "2026-10-02"
   },
@@ -507,10 +519,10 @@
     }
    },
    "signIn": false,
-   "pages": 1,
+   "pages": 3,
    "emailsCode": false,
    "codeOn": "",
-   "forms": 0,
+   "forms": 1,
    "ready": 0,
    "trouble": {},
    "updated": "2026-10-02"
