@@ -41,10 +41,15 @@
         if (!target) target = [...group].find((r) => r.value === f.value && r.value !== "on");
         if (!target) { report.failed.push({ selector: f.selector, why: "radio option not found: " + f.value }); continue; }
         target.click();
-        if (!target.checked) { target.checked = true; fire(target, ["input", "change", "click"]); }
+        // A box that did not take the click is tried through its label. It is never ticked from script behind the
+        // form's back: the page would show it and the form would not know.
+        if (!target.checked) { const l = (target.id && document.querySelector(`label[for="${CSS.escape(target.id)}"]`)) || target.closest("label"); if (l) l.click(); }
+        if (!target.checked) { report.failed.push({ selector: f.selector, why: "the option did not take a click" }); continue; }
       } else if (f.kind === "checkbox") {
         const want = /^(true|yes|1|on|checked)$/i.test(f.value);
-        if (el.checked !== want) { el.click(); if (el.checked !== want) { el.checked = want; fire(el, ["input", "change", "click"]); } }
+        if (el.checked !== want) el.click();
+        if (el.checked !== want) { const l = (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) || el.closest("label, [role=checkbox]"); if (l) l.click(); }
+        if (el.checked !== want) { report.failed.push({ selector: f.selector, why: "the box did not take a click" }); continue; }
       } else if (f.kind === "combobox") {
         el.focus();
         el.click();

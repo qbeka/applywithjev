@@ -173,6 +173,11 @@ describe("isApplicationForm", () => {
     expect(isApplicationForm(dumpOf([field({ kind: "file", label: "Attach" })]))).toBe(true);
     expect(isApplicationForm(dumpOf([]))).toBe(false);
   });
+  it("does not take a job alert or a newsletter box for an application", () => {
+    expect(isApplicationForm(dumpOf([field({ kind: "email", label: "Email me jobs like this" })]))).toBe(false);
+    expect(isApplicationForm(dumpOf([field({ label: "First name" }), field({ kind: "email", label: "Email" })]))).toBe(true);
+    expect(isApplicationForm(dumpOf([field({ kind: "file", label: "Resume/CV (Attach)" })]))).toBe(true);
+  });
 });
 
 describe("work history, signatures and combined contact boxes", () => {

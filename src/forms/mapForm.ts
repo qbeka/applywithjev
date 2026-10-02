@@ -267,10 +267,21 @@ async function mapFormFresh(jev: JevClient, profile: Profile, job: Job, dump: Fi
     }
   });
   const askable = dump.fields.filter((f) => f.kind !== "file" && !resolvedInCode.has(f.id));
+  // A chunk too large for JEV's context (long questions, long option lists) is halved and asked again.
+  const ask = async (chunk: DumpedField[]): Promise<Record<string, Answer>> => {
+    const questions = questionsFor(chunk);
+    if (!Object.keys(questions).length) return {};
+    try {
+      return await jev.decide(buildFormState(profile, job, dump, chunk), questions, `map-form:${job.id}:${job.company}`);
+    } catch (err) {
+      if (chunk.length < 2 || !/max_tokens_exceeded|context length|too large/i.test(err instanceof Error ? err.message : "")) throw err;
+      const half = Math.ceil(chunk.length / 2);
+      return { ...(await ask(chunk.slice(0, half))), ...(await ask(chunk.slice(half))) };
+    }
+  };
   for (let i = 0; i < askable.length; i += FORM.fieldsPerCall) {
     const chunk = askable.slice(i, i + FORM.fieldsPerCall);
-    const questions = questionsFor(chunk);
-    const answers = Object.keys(questions).length ? await jev.decide(buildFormState(profile, job, dump, chunk), questions, `map-form:${job.id}:${job.company}`) : {};
+    const answers = await ask(chunk);
     for (const f of chunk) planned.push(planField(f, answers[f.id], profile, job));
   }
   const fileBoxes = dump.fields.filter((f) => f.kind === "file");

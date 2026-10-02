@@ -154,6 +154,24 @@
     }
     return "";
   };
+  // The question above a group of options on a form that writes it as plain text, with no label or legend.
+  // The walk stops at another question's controls, so an option never takes the question of the group before it.
+  const optionQuestionFor = (el) => {
+    const sameGroup = (node) => [...node.querySelectorAll("input, select, textarea")].every((i) => i.type === el.type && !!el.name && i.name === el.name);
+    let cur = el;
+    for (let depth = 0; cur && cur !== document.body && depth < 8; depth++, cur = cur.parentElement) {
+      let sib = cur.previousElementSibling;
+      while (sib) {
+        if (sib.tagName === "H1" || sib.querySelector("h1")) return "";
+        const holds = sib.querySelector("input, select, textarea, [role=combobox]");
+        if (holds && !sameGroup(sib)) return "";
+        const t = text(sib);
+        if (!holds && t && t.length <= LABEL_MAX && !GENERIC.test(t)) return t.replace(/\s*[*✱]\s*$/, "");
+        sib = sib.previousElementSibling;
+      }
+    }
+    return "";
+  };
   const hintFor = (el) => {
     const by = el.getAttribute("aria-describedby");
     const bits = [];
@@ -223,7 +241,7 @@
     }
     if (isControl && type !== "radio") usedContainers.add(containerOf(el));
     // A radio or a checkbox is often drawn by its label, with the real box kept out of sight behind it.
-    const drawnByLabel = (type === "radio" || type === "checkbox") && !visible(el) && [el.closest("label"), el.id && document.querySelector(`label[for="${cssEscape(el.id)}"]`)].some((l) => l && visible(l));
+    const drawnByLabel = (type === "radio" || type === "checkbox") && !visible(el) && [el.closest("label"), el.id && document.querySelector(`label[for="${cssEscape(el.id)}"]`), type === "checkbox" && el.closest("[role=checkbox]")].some((l) => l && visible(l));
     // A select2 list keeps the real <select> out of sight and draws its own box beside it.
     const drawnBySelect2 = tag === "select" && /select2-hidden/.test(el.className) && !!el.nextElementSibling && visible(el.nextElementSibling);
     if (!visible(el) && type !== "file" && !drawnByLabel && !drawnBySelect2) return;
@@ -262,7 +280,7 @@
       section: sectionFor(el),
     };
     // For an option, the question it answers says more than the page section it sits in.
-    if (kind === "checkbox" || kind === "radio") f.section = groupQuestionFor(el) || f.section;
+    if (kind === "checkbox" || kind === "radio") f.section = groupQuestionFor(el) || optionQuestionFor(el) || f.section;
     f.required = isRequired(el, f.label) || /[*✱]\s*$/.test(questionFor(el));
     if (kind !== "radio" && kind !== "checkbox") f.label = cleanLabel(el, f.label);
     if (kind === "file") {
@@ -286,6 +304,12 @@
         let cur = el.parentElement, depth = 0;
         while (cur && depth < 5) { const l = cur.querySelector("legend, label, [class*=label i], h2, h3, h4"); if (l && text(l) && !f.options.some((o) => o.label === text(l))) { f.label = text(l); break; } cur = cur.parentElement; depth++; }
       }
+      // The mark that a group is required sits on its question, not on its options.
+      const box = el.closest("fieldset, [role=radiogroup], [class*=field-entry i], [class*=fieldEntry]");
+      const head = box && [...box.querySelectorAll("legend, label, [class*=question-title i]")].find((h) => !h.querySelector("input") && !f.options.some((o) => o.label === text(h)));
+      if (head && (/required/i.test(String(head.getAttribute("class") || "")) || /[*✱]\s*$|^\s*[*✱]/.test(text(head)))) f.required = true;
+      if (box && box.getAttribute("aria-required") === "true") f.required = true;
+      f.label = f.label.replace(/\s*[*✱]\s*$/, "");
     } else if (kind === "select") {
       [...el.options].forEach((o) => { if (o.value !== "" || o.text.trim()) f.options.push({ value: o.value, label: o.text.trim() }); });
       f.value = el.value;

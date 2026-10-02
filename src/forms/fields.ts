@@ -55,8 +55,15 @@ export type FieldsDump = z.infer<typeof FieldsDump>;
  * True when a dump is an application form and not some other page with inputs on it (a careers
  * page with a search box and a language picker). An application asks for a resume, an email or a name.
  */
+/**
+ * True for a page that holds an application: a box for a file, or both a name and an email. An
+ * email box alone is a job alert or a newsletter, which must never be filled or sent.
+ */
 export function isApplicationForm(d: FieldsDump): boolean {
-  return d.fields.some((f) => f.kind === "file" || f.kind === "email" || /e-?mail|resume|\bcv\b|curriculum|first name|last name|full name|legal name|^(your )?name$|prénom/i.test(f.label));
+  const asksFile = d.fields.some((f) => f.kind === "file" || /resume|\bcv\b|curriculum/i.test(f.label));
+  const asksName = d.fields.some((f) => /first name|last name|full name|legal name|^(your )?name\b|prénom|\bnom\b/i.test(f.label));
+  const asksEmail = d.fields.some((f) => f.kind === "email" || /e-?mail|courriel/i.test(f.label));
+  return asksFile || (asksName && asksEmail);
 }
 
 export const PlanAction = z.enum([
