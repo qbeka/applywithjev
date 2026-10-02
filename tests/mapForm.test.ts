@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ProfileSchema } from "../src/profile/schema.js";
 import { PROFILE_KEYS, profileFacts, valueFor } from "../src/profile/fieldKeys.js";
-import { authForCountry, educationDatePlan, hasChoosableOptions, planField, questionsFor, valueForJob } from "../src/forms/mapForm.js";
-import { FieldsDump, type DumpedField } from "../src/forms/fields.js";
+import { authForCountry, educationDatePlan, employmentDatePlan, hasChoosableOptions, planField, questionsFor, sectionOf, valueForJob } from "../src/forms/mapForm.js";
+import { FieldsDump, isApplicationForm, type DumpedField } from "../src/forms/fields.js";
 import type { Job } from "../src/jobs/normalize.js";
 
 const profile = ProfileSchema.parse(JSON.parse(readFileSync(new URL("../data/profile.example.json", import.meta.url), "utf8")));
@@ -162,6 +162,47 @@ describe("long option lists, salary boxes and split confidence", () => {
     const guess = { type: "choice" as const, choice: "bank:why_company", probabilities: {}, confidence: 0.3 };
     expect(planField(field({ kind: "textarea", label: "What motivates you?" }), guess, profile, j)).toMatchObject({ action: "draft", key: "why_company" });
     expect(planField(field({ kind: "text", label: "Mystery" }), { ...guess, choice: "city" }, profile, j).action).toBe("review");
+  });
+});
+
+describe("isApplicationForm", () => {
+  const dumpOf = (fields: DumpedField[]) => FieldsDump.parse({ url: "https://x", fields });
+  it("tells an application from a page that merely has inputs", () => {
+    expect(isApplicationForm(dumpOf([field({ kind: "select", label: "region" }), field({ kind: "select", label: "region" }), field({ label: "Search" })]))).toBe(false);
+    expect(isApplicationForm(dumpOf([field({ label: "First Name" }), field({ kind: "email", label: "Email" })]))).toBe(true);
+    expect(isApplicationForm(dumpOf([field({ kind: "file", label: "Attach" })]))).toBe(true);
+    expect(isApplicationForm(dumpOf([]))).toBe(false);
+  });
+});
+
+describe("work history, signatures and combined contact boxes", () => {
+  const j = job(["Toronto, ON"]);
+  const months = Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][i] as string }));
+  const company = field({ id: "c", label: "Company name" });
+  const title = field({ id: "t", label: "Title" });
+  const school = field({ id: "s", label: "School" });
+  it("tells a work-history block from an education block by the nearest field above", () => {
+    expect(sectionOf([school, company, title])).toBe("employment");
+    expect(sectionOf([company, title, field({ label: "Start date month" }), field({ label: "Start date year" })])).toBe("employment");
+    expect(sectionOf([company, school, field({ label: "Degree" })])).toBe("education");
+    expect(sectionOf([field({ label: "Phone" })])).toBeNull();
+  });
+  it("fills work-history dates from the most recent job, not from the degree or the job start", () => {
+    const above = [company, title];
+    expect(employmentDatePlan(field({ kind: "select", label: "Start date month", options: months }), above, profile)).toMatchObject({ action: "fill", optionLabel: "May", key: "employment_start_date" });
+    expect(employmentDatePlan(field({ kind: "text", label: "Start date year" }), above, profile)).toMatchObject({ action: "fill", value: "2026" });
+    expect(employmentDatePlan(field({ kind: "select", label: "End date month", options: months }), above, profile)).toMatchObject({ action: "fill", optionLabel: "August" });
+    expect(employmentDatePlan(field({ kind: "checkbox", label: "Current role" }), above, profile)).toMatchObject({ action: "skip" });
+    expect(employmentDatePlan(field({ kind: "select", label: "Start date month", options: months }), [school], profile)).toBeNull();
+    expect(employmentDatePlan(field({ kind: "text", label: "Phone" }), above, profile)).toBeNull();
+  });
+  it("never types a name to sign an agreement", () => {
+    const answer = { type: "choice" as const, choice: "full_name", probabilities: { full_name: 1 }, confidence: 1 };
+    expect(planField(field({ label: "Please Review the NDA and indicate your agreement by typing your full name below", required: true }), answer, profile, j)).toMatchObject({ action: "review", key: "signature" });
+    expect(planField(field({ label: "Full name" }), answer, profile, j)).toMatchObject({ action: "fill", value: "Ada Lovelace" });
+  });
+  it("answers a box that wants both a phone and an email with both", () => {
+    expect(valueFor(profile, "phone_and_email")).toBe("+1 5555550123, ada@example.com");
   });
 });
 

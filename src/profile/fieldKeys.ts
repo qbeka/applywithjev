@@ -22,6 +22,7 @@ export const PROFILE_KEYS = {
   phone: "Phone number without country code",
   phone_with_country_code: "Phone number in international format with country code",
   phone_country_code: "Phone country code or country selector",
+  phone_and_email: "One box that asks for both a phone number and an email address",
   address_line1: "Street address, first line",
   city: "City",
   state_province: "State, province or region",
@@ -109,6 +110,7 @@ export function valueFor(profile: Profile, key: ProfileKey): string | null {
     case "phone": return profile.phone.national;
     case "phone_with_country_code": return `${profile.phone.countryCode}${profile.phone.national}`;
     case "phone_country_code": return profile.phone.countryCode;
+    case "phone_and_email": return `${profile.phone.countryCode} ${profile.phone.national}, ${profile.email}`;
     case "address_line1": return profile.address.line1;
     case "city": return profile.address.city;
     case "state_province": return profile.address.region;

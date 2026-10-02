@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { isFormWrite } from "../src/browser/cdp.js";
 import { closestOptions, pickOption } from "../src/browser/formRunner.js";
 
 const hints = ["Edmonton", "Alberta", "AB", "Canada"];
@@ -41,6 +42,21 @@ describe("closestOptions", () => {
     expect(top[0]).toBe("Computer Science");
     expect(top).toContain("Computer Engineering");
     expect(top).not.toContain("History");
+  });
+});
+
+describe("isFormWrite", () => {
+  const form = "https://jobs.ashbyhq.com/acme/134c282c/application";
+  it("counts the form's own saves and direct file uploads", () => {
+    expect(isFormWrite("https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSetFormValue", form)).toBe(true);
+    expect(isFormWrite("https://acme-uploads.s3.us-east-1.amazonaws.com/", form)).toBe(true);
+  });
+  it("ignores analytics, error reporting and widgets from other sites", () => {
+    expect(isFormWrite("https://api.rollbar.com/api/1/item/", form)).toBe(false);
+    expect(isFormWrite("https://www.linkedin.com/talentwidgets/apply-with-linkedin", form)).toBe(false);
+    expect(isFormWrite("https://api.pinterest.com/v3/coc_event/", "https://job-boards.greenhouse.io/embed/job_app?for=pinterest")).toBe(false);
+    expect(isFormWrite("https://c.spl.greenhouse.io/com.snowplowanalytics.snowplow/tp2", "https://job-boards.greenhouse.io/embed/job_app?for=acme")).toBe(false);
+    expect(isFormWrite("not a url", form)).toBe(false);
   });
 });
 

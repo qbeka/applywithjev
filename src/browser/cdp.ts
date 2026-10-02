@@ -63,12 +63,43 @@ type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
 type Sent = { url: string; status: number | null; failed: boolean };
 
+const site = (url: string): string => {
+  try {
+    return new URL(url).hostname.split(".").slice(-2).join(".");
+  } catch {
+    return "";
+  }
+};
+/** File stores that forms upload a resume to directly. */
+const UPLOAD_HOSTS = /(^|\.)(amazonaws\.com|storage\.googleapis\.com|blob\.core\.windows\.net)$/;
+
+/** Analytics and error reporting, which a site may serve from its own domain. */
+const TRACKING = /snowplow|analytics|telemetry|\/collect\b|\/beacon\b|\/rum\b|rollbar|sentry|datadog|segment|amplitude/i;
+
+/**
+ * True for a write that belongs to the form: one sent to the page's own site, or a file upload to a
+ * known store. Analytics, error reporting and widgets from other sites are not the form saving anything.
+ */
+export function isFormWrite(requestUrl: string, documentUrl: string): boolean {
+  let host = "";
+  try {
+    host = new URL(requestUrl).hostname;
+  } catch {
+    return false;
+  }
+  if (UPLOAD_HOSTS.test(host)) return true;
+  if (TRACKING.test(requestUrl)) return false;
+  return site(requestUrl) !== "" && site(requestUrl) === site(documentUrl);
+}
+
 export class Page {
   private seq = 0;
   private pending = new Map<number, Pending>();
   /** Writes the page itself makes (POST, PUT, PATCH): some forms save every field to their server as it changes. */
   private writes = new Map<string, Sent>();
   private inflight = new Set<string>();
+  /** The address of the page itself, kept current so a widget's own frame is not mistaken for the form. */
+  private mainUrl = "";
   private constructor(private ws: WebSocket, readonly targetId: string) {}
 
   static async attach(target: Target): Promise<Page> {
@@ -100,21 +131,28 @@ export class Page {
   }
 
   private onNetwork(method: string, params: Record<string, unknown>): void {
+    if (method === "Page.frameNavigated") {
+      const frame = params.frame as { parentId?: string; url: string };
+      if (!frame.parentId) this.mainUrl = frame.url;
+      return;
+    }
     const id = params.requestId as string | undefined;
     if (!id) return;
     if (method === "Network.requestWillBeSent") {
       const req = params.request as { url: string; method: string };
-      if (!/^(POST|PUT|PATCH)$/.test(req.method) || /google|recaptcha|hcaptcha|sentry|datadog|segment|analytics|amplitude|doubleclick|facebook|linkedin\.com\/li|clarity/i.test(req.url)) return;
+      if (!/^(POST|PUT|PATCH)$/.test(req.method) || !isFormWrite(req.url, this.mainUrl || String(params.documentURL ?? ""))) return;
       this.writes.set(id, { url: req.url, status: null, failed: false });
       this.inflight.add(id);
     } else if (method === "Network.responseReceived" && this.writes.has(id)) {
+      // An answer is what matters. Waiting for the body to finish would hang on a stream that never closes.
       const w = this.writes.get(id) as Sent;
       w.status = (params.response as { status: number }).status;
       w.failed = w.status >= 400;
+      this.inflight.delete(id);
     } else if (method === "Network.loadingFinished") {
       this.inflight.delete(id);
     } else if (method === "Network.loadingFailed" && this.writes.has(id)) {
-      // Only a request that never got an answer failed. An answered one with no body (204) also ends here.
+      // Only a request that never got an answer failed.
       const w = this.writes.get(id) as Sent;
       if (w.status === null) w.failed = true;
       this.inflight.delete(id);

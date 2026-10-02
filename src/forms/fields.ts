@@ -48,6 +48,14 @@ export const FieldsDump = z.object({
 });
 export type FieldsDump = z.infer<typeof FieldsDump>;
 
+/**
+ * True when a dump is an application form and not some other page with inputs on it (a careers
+ * page with a search box and a language picker). An application asks for a resume, an email or a name.
+ */
+export function isApplicationForm(d: FieldsDump): boolean {
+  return d.fields.some((f) => f.kind === "file" || f.kind === "email" || /e-?mail|resume|\bcv\b|curriculum|first name|last name|full name|legal name|^(your )?name$|prénom/i.test(f.label));
+}
+
 export const PlanAction = z.enum([
   /** fillFields.js writes the value. */
   "fill",

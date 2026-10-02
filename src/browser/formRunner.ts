@@ -7,11 +7,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { BROWSER, FORM, PATHS } from "../config.js";
-import { FieldsDump, type DumpedField, type FillPlan } from "../forms/fields.js";
+import { FieldsDump, isApplicationForm, type DumpedField, type FillPlan } from "../forms/fields.js";
 import { hasChoosableOptions, mapForm } from "../forms/mapForm.js";
 import { decidePageState, type PageState } from "../forms/pageState.js";
 import type { JevClient } from "../jev/client.js";
-import { applyUrlFor, type Job } from "../jobs/normalize.js";
+import { applyUrlFor, greenhouseFallbackUrl, type Job } from "../jobs/normalize.js";
 import type { Profile } from "../profile/schema.js";
 import { resolveOpenFields, type OpenField, type Resolution } from "../answers/resolve.js";
 import type { QueueEntry } from "../jobs/queue.js";
@@ -59,6 +59,18 @@ export function loadReport(jobId: string): FillReport {
   if (!existsSync(reportFile(jobId))) throw new Error(`No fill report for job ${jobId}. Run fill first.`);
   return JSON.parse(readFileSync(reportFile(jobId), "utf8")) as FillReport;
 }
+/**
+ * Required fields the page shows empty. A group of checkboxes that share a name is one question:
+ * it is answered once any box in it is ticked, so the unticked ones are not missing.
+ */
+function emptyRequired(d: FieldsDump, plan: FillPlan, shown: string[], states: ControlState[]): string[] {
+  const nameOf = new Map(d.fields.map((f) => [f.selector, f.kind === "checkbox" ? f.name : ""]));
+  const answeredGroups = new Set(plan.fields.filter((f, i) => f.kind === "checkbox" && shown[i]).map((f) => nameOf.get(f.selector)).filter((n): n is string => !!n));
+  return plan.fields
+    .filter((f, i) => f.required && !shown[i] && states[i] !== "off" && f.action !== "upload" && !(f.kind === "checkbox" && answeredGroups.has(nameOf.get(f.selector) ?? "")))
+    .map((f) => f.label);
+}
+
 const isReady = (r: Pick<FillReport, "state" | "drafts" | "reviews" | "failed" | "missingRequired">) => r.state === "filled" && !r.drafts.length && !r.reviews.length && !r.failed.length && !r.missingRequired.length;
 
 const loadSession = (): Session => (existsSync(SESSION) ? (JSON.parse(readFileSync(SESSION, "utf8")) as Session) : {});
@@ -108,10 +120,10 @@ async function goto(page: Page, url: string): Promise<void> {
 }
 
 /** Lands on the page that holds the form: the URL itself, an embedded ATS frame, or behind an Apply button. */
-async function openForm(page: Page, url: string): Promise<FieldsDump> {
-  await goto(page, url);
+async function openForm(page: Page, job: Job): Promise<FieldsDump> {
+  await goto(page, applyUrlFor(job));
   let d = await dump(page);
-  for (let hop = 0; hop < 3 && d.fields.length < 3; hop++) {
+  for (let hop = 0; hop < 3 && !isApplicationForm(d); hop++) {
     const frame = d.frames[0];
     if (frame) {
       await goto(page, frame);
@@ -122,6 +134,12 @@ async function openForm(page: Page, url: string): Promise<FieldsDump> {
       await settle(page);
       await install(page);
     }
+    d = await dump(page);
+  }
+  // A careers page that shows the job without the form: go to the board's own form for the same posting.
+  const fallback = !isApplicationForm(d) && !d.hasPassword ? greenhouseFallbackUrl(job) : null;
+  if (fallback) {
+    await goto(page, fallback);
     d = await dump(page);
   }
   return d;
@@ -445,24 +463,24 @@ export async function fillJob(jev: JevClient, profile: Profile, job: Job): Promi
   const base = { jobId: job.id, company: job.company, title: job.title, ats: job.ats };
   const done = (partial: Omit<FillReport, "ready">): FillReport => saveReport({ ...partial, ready: isReady(partial) });
   try {
-    let d = await openForm(page, applyUrlFor(job));
+    let d = await openForm(page, job);
     trace(`${job.company}: form open ${Date.now() - started}ms, ${d.fields.length} fields`);
     // Read and written in one synchronous step, so jobs filled side by side do not overwrite each other.
     saveSession({ ...loadSession(), [job.id]: { targetId: target.id, url: d.url } });
-    if (d.fields.length < 3 && !d.hasPassword) {
+    if (!isApplicationForm(d) && !d.hasPassword) {
       // Job boards answer bursts with an error page. One unhurried second try settles most of them.
       const first = await decidePageState(jev, await page.evaluate<string>("window.__awj.pageText()"), d.url);
       if (first.state === "error" || first.state === "other") {
         trace(`${job.company}: page looked like ${first.state}, retrying in ${BROWSER.retryAfterMs}ms`);
         await sleep(BROWSER.retryAfterMs);
-        d = await openForm(page, applyUrlFor(job));
+        d = await openForm(page, job);
       }
     }
     if (d.hasPassword) {
       // A password box means a login or account page. Nothing is typed into it.
       return done({ ...base, url: d.url, state: "blocked", reason: "login or account required", fields: [], drafts: [], reviews: [], failed: [], missingRequired: [], seconds: (Date.now() - started) / 1000, jevCostUsd: 0 });
     }
-    if (d.fields.length < 3) {
+    if (!isApplicationForm(d)) {
       const state = await decidePageState(jev, await page.evaluate<string>("window.__awj.pageText()"), d.url);
       return done({ ...base, url: d.url, state: "blocked", reason: `no form found, page looks like: ${state.state}`, fields: [], drafts: [], reviews: [], failed: [], missingRequired: [], seconds: (Date.now() - started) / 1000, jevCostUsd: 0 });
     }
@@ -470,18 +488,21 @@ export async function fillJob(jev: JevClient, profile: Profile, job: Job): Promi
     trace(`${job.company}: options read ${Date.now() - started}ms`);
     const plan = await mapForm(jev, profile, job, d);
     trace(`${job.company}: mapped ${Date.now() - started}ms`);
-    let failedRaw = await applyFills(page, plan.fills, profile);
-    trace(`${job.company}: filled ${Date.now() - started}ms`);
-    failedRaw = await secondLook(page, jev, profile, job, d, plan, failedRaw);
+    // The resume goes in first: some boards (Lever) read it and write what they find into the form,
+    // and the profile's values have to be the ones that stay.
     const uploaded = new Set<string>();
+    const uploadFailures: { selector: string; why: string }[] = [];
     for (const u of plan.uploads) {
       const why = (await uploadFile(page, u.selector, u.path)) ?? null;
       if (!why) uploaded.add(u.selector);
-      else failedRaw.push({ selector: u.selector, why });
+      else uploadFailures.push({ selector: u.selector, why });
       trace(`${job.company}: upload ${why ?? "ok"}`);
     }
+    let failedRaw = await applyFills(page, plan.fills, profile);
+    trace(`${job.company}: filled ${Date.now() - started}ms`);
+    failedRaw = [...(await secondLook(page, jev, profile, job, d, plan, failedRaw)), ...uploadFailures];
     writeFileSync(planFile(job.id), JSON.stringify({ dump: d, plan }, null, 2));
-    return done({ ...base, ...(await report(page, plan, failedRaw, uploaded)), seconds: (Date.now() - started) / 1000, jevCostUsd: plan.jevCostUsd });
+    return done({ ...base, ...(await report(page, d, plan, failedRaw, uploaded)), seconds: (Date.now() - started) / 1000, jevCostUsd: plan.jevCostUsd });
   } finally {
     page.close();
   }
@@ -579,7 +600,7 @@ async function waitForFile(page: Page, name: string): Promise<boolean> {
   return false;
 }
 
-async function report(page: Page, plan: FillPlan, failedRaw: { selector: string; why: string }[], uploaded = new Set<string>()): Promise<Pick<FillReport, "url" | "state" | "reason" | "fields" | "drafts" | "reviews" | "failed" | "missingRequired">> {
+async function report(page: Page, d: FieldsDump, plan: FillPlan, failedRaw: { selector: string; why: string }[], uploaded = new Set<string>()): Promise<Pick<FillReport, "url" | "state" | "reason" | "fields" | "drafts" | "reviews" | "failed" | "missingRequired">> {
   const shown = await shownValues(page, plan.fields.map((f) => f.selector));
   const fields = plan.fields.map((f, i) => ({ label: f.label, required: f.required, action: f.action, shown: uploaded.has(f.selector) ? path.basename(f.value ?? "") : shown[i] ?? "", note: f.note }));
   const labelOf = (selector: string) => plan.fields.find((f) => f.selector === selector)?.label ?? selector;
@@ -599,7 +620,7 @@ async function report(page: Page, plan: FillPlan, failedRaw: { selector: string;
     drafts: plan.drafts,
     reviews: plan.reviews,
     failed: failed.map((f) => ({ ...f, label: labelOf(f.selector) })),
-    missingRequired: fields.filter((f, i) => f.required && !f.shown && states[i] !== "off").map((f) => f.label),
+    missingRequired: emptyRequired(d, plan, fields.map((f) => f.shown), states),
   };
 }
 
@@ -629,9 +650,9 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
     // A file that did not upload is not something Claude can answer; it stays a failure.
     for (const x of r.failed) if (dumped(x.selector)?.kind !== "file") add(x.selector, x.why);
     const before = await shownValues(page, plan.fields.map((f) => f.selector));
-    plan.fields.forEach((f, i) => {
-      if (f.required && !before[i] && f.action !== "upload") add(f.selector, "required and still empty");
-    });
+    const statesBefore = await controlStates(page, plan.fields.map((f) => f.selector));
+    const stillEmpty = new Set(emptyRequired(d, plan, before, statesBefore));
+    for (const f of plan.fields) if (stillEmpty.has(f.label)) add(f.selector, "required and still empty");
     const filled = plan.fields.map((f, i) => ({ label: f.label, value: before[i] ?? "" })).filter((f) => f.value && f.label);
     const resolution = await resolveOpenFields(profile, entry, filled, [...open.values()]);
     const fills = resolution.answers
@@ -661,7 +682,7 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
         // Anything the plan or Claude wanted in the form that the page does not show.
         ...plan.fields.filter((f, i) => (f.action === "fill" || f.action === "upload" || fills.some((x) => x.selector === f.selector)) && !fields[i]?.shown && states[i] !== "off" && !failedRaw.some((x) => x.selector === f.selector)).map((f) => ({ selector: f.selector, why: "the value is not confirmed on the page" })),
       ].map((f) => ({ ...f, label: labelOf(f.selector) })),
-      missingRequired: fields.filter((f, i) => f.required && !f.shown && states[i] !== "off").map((f) => f.label),
+      missingRequired: emptyRequired(d, plan, fields.map((f) => f.shown), states),
       resolution,
     };
     return saveReport({ ...next, ready: resolution.verdict === "ready" && isReady(next) });
@@ -686,8 +707,8 @@ export async function setValues(profile: Profile, jobId: string, fills: Fill[]):
 export async function inspect(jobId: string): Promise<{ fields: FieldReport[]; errors: string[] }> {
   const page = await pageFor(jobId);
   try {
-    const { plan } = JSON.parse(readFileSync(planFile(jobId), "utf8")) as { plan: FillPlan };
-    const r = await report(page, plan, []);
+    const { dump: d, plan } = JSON.parse(readFileSync(planFile(jobId), "utf8")) as { dump: FieldsDump; plan: FillPlan };
+    const r = await report(page, d, plan, []);
     return { fields: r.fields, errors: await page.evaluate<string[]>("window.__awj.errors()") };
   } finally {
     page.close();
@@ -700,16 +721,14 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
   if (!r.ready && !force) throw new Error(`not ready to submit: ${r.resolution?.reason || [...r.missingRequired.map((l) => `empty: ${l.slice(0, 50)}`), ...r.failed.map((f) => `failed: ${f.label.slice(0, 50)}`), ...r.reviews.map((x) => `review: ${x.label.slice(0, 50)}`), ...r.drafts.map((x) => `draft: ${x.label.slice(0, 50)}`)].join("; ") || r.reason}`);
   const page = await pageFor(jobId);
   try {
-    const { plan } = JSON.parse(readFileSync(planFile(jobId), "utf8")) as { plan: FillPlan };
+    const { dump: d, plan } = JSON.parse(readFileSync(planFile(jobId), "utf8")) as { dump: FieldsDump; plan: FillPlan };
     const candidates = plan.submitSelectors.map((s) => ({ selector: s.split("  /*")[0] ?? s, text: /\/\*\s*(.*?)\s*\*\//.exec(s)?.[1] ?? "" }));
     const pick = candidates.find((c) => /submit/i.test(c.text)) ?? candidates.find((c) => /apply|send|finish/i.test(c.text) && !/linkedin|indeed/i.test(c.text));
     if (!pick) throw new Error("No submit control in the plan.");
     if (!force) {
       // The report says ready, but the page is what gets submitted: read the required fields once more.
-      const required = plan.fields.filter((f) => f.required && f.action !== "upload");
-      const now = await shownValues(page, required.map((f) => f.selector));
-      const states = await controlStates(page, required.map((f) => f.selector));
-      const empty = required.filter((_, i) => !now[i] && states[i] !== "off").map((f) => f.label.slice(0, 50));
+      const selectors = plan.fields.map((f) => f.selector);
+      const empty = emptyRequired(d, plan, await shownValues(page, selectors), await controlStates(page, selectors)).map((l) => l.slice(0, 50));
       if (empty.length) throw new Error(`not ready to submit, required fields are empty on the page: ${empty.join("; ")}`);
     }
     await page.bringToFront();

@@ -41,6 +41,15 @@ export function buildFormState(profile: Profile, job: Job, dump: FieldsDump, fie
         degree_start: `${monthName(profile.education[0]?.startMonth ?? 1)} ${profile.education[0]?.startYear} (month ${profile.education[0]?.startMonth})`,
         degree_end_or_graduation: `${monthName(profile.education[0]?.gradMonth ?? 1)} ${profile.education[0]?.gradYear} (month ${profile.education[0]?.gradMonth})`,
       },
+      /** What the candidate has done, so a count or a yes/no about it is answered from the record and not guessed. */
+      background: {
+        experience: profile.experience.map((e) => ({ company: e.company, title: e.title, location: e.location, start: e.start, end: e.end, current: e.current })),
+        internships_and_jobs_held: profile.experience.length,
+        projects: profile.projects.map((p) => ({ name: p.name, role: p.role, start: p.start, end: p.end })),
+        skills: profile.skills,
+        spoken_languages: profile.spokenLanguages,
+        notes: profile.facts,
+      },
       demographics: profile.demographics,
       preferences: profile.preferences,
       /** The candidate's own answers to recurring questions. They outrank any guess. */
@@ -158,12 +167,69 @@ export function educationDatePlan(f: DumpedField, previous: DumpedField[], profi
   return { ...base, action: "fill", key: isStart ? "education_start_date" : "graduation_date", value: f.kind === "select" ? opt.value : opt.label, optionLabel: opt.label, confidence: 1, note: "degree date from the profile" };
 }
 
+const EMPLOYMENT_NEIGHBOUR = /company|employer|job title|^title$|position|^role$/i;
+const SCHOOL_NEIGHBOUR = /school|university|college|degree|discipline|field of study|major/i;
+const WORK_DATE_LABEL = /^(start|end)\s*(?:date)?\s*(month|year)?$/i;
+const CURRENT_ROLE = /^(current role|current position|i currently work here|currently work here)$/i;
+
+/** Which block a date field sits in, from the nearest field above it that is not itself a date. */
+export function sectionOf(previous: DumpedField[]): "education" | "employment" | null {
+  for (let i = previous.length - 1; i >= 0; i--) {
+    const label = (previous[i] as DumpedField).label.trim();
+    if (/^(start|end)\b/i.test(label) || CURRENT_ROLE.test(label)) continue;
+    if (EMPLOYMENT_NEIGHBOUR.test(label)) return "employment";
+    return SCHOOL_NEIGHBOUR.test(label) ? "education" : null;
+  }
+  return null;
+}
+
+/**
+ * Dates and the "current role" box of a work-history block are facts about the most recent job
+ * in the profile, so they are resolved in code. Returns null when the field is not one of these.
+ */
+export function employmentDatePlan(f: DumpedField, previous: DumpedField[], profile: Profile): PlannedField | null {
+  const exp = profile.experience[0];
+  if (!exp || sectionOf(previous) !== "employment") return null;
+  const label = f.label.trim();
+  const base = { id: f.id, selector: f.selector, kind: f.kind, label: f.label, required: f.required, optionLabel: null as string | null };
+  if (f.kind === "checkbox" && CURRENT_ROLE.test(label)) {
+    return exp.current
+      ? { ...base, action: "fill", key: "checked", value: "true", confidence: 1, note: "the most recent job is the current one" }
+      : { ...base, action: "skip", key: "unchecked", value: null, confidence: 1, note: "the most recent job has ended" };
+  }
+  const m = WORK_DATE_LABEL.exec(label);
+  if (!m) return null;
+  const isStart = /^start/i.test(m[1] as string);
+  const date = /^(\d{4})-(\d{2})/.exec(isStart ? exp.start : exp.end);
+  if (!date) return isStart || !exp.current ? null : { ...base, action: "skip", key: "leave_blank", value: null, confidence: 1, note: "still in this job, no end date" };
+  const year = date[1] as string;
+  const month = parseInt(date[2] as string, 10);
+  const labels = f.options.map((o) => o.label.trim());
+  const part = (m[2]?.toLowerCase() as "month" | "year" | undefined) ?? (labels.filter((l) => /^(19|20)\d\d$/.test(l)).length >= 2 ? "year" : labels.length ? "month" : undefined);
+  const key = isStart ? "employment_start_date" : "employment_end_date";
+  const note = "work history date from the profile";
+  if ((f.kind === "select" || f.kind === "combobox") && f.options.length) {
+    const name = monthName(month).toLowerCase();
+    const opt = part === "year"
+      ? f.options.find((o) => o.label.trim() === year || o.value === year)
+      : f.options.find((o) => o.label.trim().toLowerCase().startsWith(name.slice(0, 3)) || o.label.trim() === String(month) || o.label.trim() === String(month).padStart(2, "0") || o.value === String(month));
+    if (!opt) return { ...base, action: "review", key, value: null, confidence: 0.4, note: `work history ${isStart ? "start" : "end"} date, no matching option for ${monthName(month)} ${year}` };
+    return { ...base, action: "fill", key, value: f.kind === "select" ? opt.value : opt.label, optionLabel: opt.label, confidence: 1, note };
+  }
+  if (part === "year" && (f.kind === "text" || f.kind === "number")) return { ...base, action: "fill", key, value: year, confidence: 1, note };
+  return null;
+}
+
+/** Typing a name to sign an agreement is the candidate's act, not the tool's. */
+const SIGNATURE_LABEL = /\bNDA\b|non-?disclosure|arbitration agreement|e-?signature|electronic signature|(typ(e|ing)|enter(ing)?) your (full |legal )*name/i;
+
 export async function mapForm(jev: JevClient, profile: Profile, job: Job, dump: FieldsDump): Promise<FillPlan> {
   const planned: PlannedField[] = [];
   const startCost = jev.usage.costUsd;
   const resolvedInCode = new Set<string>();
   dump.fields.forEach((f, i) => {
-    const p = educationDatePlan(f, dump.fields.slice(Math.max(0, i - 4), i), profile);
+    const above = dump.fields.slice(Math.max(0, i - 8), i);
+    const p = employmentDatePlan(f, above, profile) ?? (sectionOf(above) === "employment" ? null : educationDatePlan(f, dump.fields.slice(Math.max(0, i - 4), i), profile));
     if (p) {
       planned.push(p);
       resolvedInCode.add(f.id);
@@ -215,6 +281,7 @@ export function planField(f: DumpedField, answer: Answer | undefined, profile: P
     const intl = /\+\d|country code|international/i.test(`${f.placeholder} ${f.hint}`);
     return { ...base, action: "fill", key: intl ? "phone_with_country_code" : "phone", value: intl ? `${profile.phone.countryCode}${profile.phone.national}` : profile.phone.national, confidence: 1, note: null };
   }
+  if (SIGNATURE_LABEL.test(f.label)) return { ...base, action: "review", key: "signature", value: null, confidence: 1, note: "signing an agreement is for the candidate to do" };
   if (!answer) return { ...base, action: "review", key: "unknown", value: null, confidence: 0, note: "no answer" };
 
   if (f.kind === "checkbox") {

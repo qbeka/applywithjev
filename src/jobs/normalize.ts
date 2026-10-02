@@ -168,11 +168,27 @@ export function dedupe(jobs: Job[]): Job[] {
  * predictable one. Greenhouse's embed page is server-rendered and skips the
  * company's custom careers site; Lever and Ashby have fixed apply paths.
  */
+export function greenhouseEmbedUrl(slug: string, id: string, eu = false): string {
+  return `https://job-boards.${eu ? "eu." : ""}greenhouse.io/embed/job_app?for=${slug}&token=${id}`;
+}
+
+/**
+ * The plain Greenhouse form for a job that is linked through the company's own careers page
+ * (`?gh_jid=`). The board's slug is not in that link, but a job found by polling the board carries
+ * it in its source. Null when it cannot be worked out.
+ */
+export function greenhouseFallbackUrl(job: Pick<Job, "url" | "ats" | "source">): string | null {
+  if (job.ats !== "greenhouse") return null;
+  const id = /[?&]gh_jid=(\d+)/.exec(job.url)?.[1];
+  const slug = /greenhouse:([a-z0-9_-]+)/i.exec(job.source)?.[1];
+  return id && slug ? greenhouseEmbedUrl(slug, id) : null;
+}
+
 export function applyUrlFor(job: Pick<Job, "url" | "ats">): string {
   if (job.ats === "greenhouse") {
     const slug = /greenhouse\.io\/(?:embed\/job_app\?for=)?([a-z0-9_-]+)/i.exec(job.url)?.[1] ?? /[?&]for=([a-z0-9_-]+)/i.exec(job.url)?.[1];
     const id = /\/jobs\/(\d+)/.exec(job.url)?.[1] ?? /[?&](?:gh_jid|token)=(\d+)/.exec(job.url)?.[1];
-    if (slug && id && slug !== "embed") return `https://boards.greenhouse.io/embed/job_app?for=${slug}&token=${id}`;
+    if (slug && id && slug !== "embed") return greenhouseEmbedUrl(slug, id, /\.eu\.greenhouse\.io/i.test(job.url));
     return job.url;
   }
   if (job.ats === "lever") {

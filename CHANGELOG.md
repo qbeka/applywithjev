@@ -50,6 +50,21 @@ Keep a Changelog and the project uses Conventional Commits.
 - The project and its skills run Claude Code on Sonnet 5.5 at high effort.
 
 ### Fixed
+- Work-history dates and the "current role" box are filled from the most
+  recent job in the profile instead of being guessed. JEV now sees the work
+  history, so "how many internships" is counted, not estimated.
+- A field that asks the candidate to type their name to sign an agreement is
+  never filled, and Claude never picks an interview or assessment slot. Both
+  hold the form for a person.
+- A group of checkboxes is one question: a required group is answered once
+  any box is ticked.
+- A careers page with a search box and a language picker is no longer taken
+  for an application form. When a careers page shows no form, the board's own
+  form for the same posting is opened.
+- Only the form's own saves and uploads are tracked. Analytics and widgets
+  from other sites no longer slow a fill down or fail an upload.
+- The resume is attached before the fields are filled, so a board that parses
+  it cannot overwrite the profile's values.
 - Pages with a password box are blocked before anything is typed.
 - A place written another way ("Edmonton, AB, Canada") is matched only when
   a region or country of the candidate's is named, never on the city alone.

@@ -143,6 +143,14 @@
     {
       "question": "How did you hear about this job?",
       "answer": "From a public list of internship and new-grad postings on GitHub. On a list of options pick the generic one that fits (job board, online, GitHub, other). Never pick a named site, event or person that was not the source."
+    },
+    {
+      "question": "May the company keep my data for future roles after this application?",
+      "answer": "No. Decline when it is optional or when the form offers a choice."
+    },
+    {
+      "question": "Yes or no questions about my history that the facts do not mention: criminal convictions, non-compete agreements, having worked at this company before, relatives who work there",
+      "answer": "No to all of them."
     }
   ]
 }
