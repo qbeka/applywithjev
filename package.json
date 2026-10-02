@@ -16,7 +16,7 @@
     "audit": "npm audit --omit=dev"
   },
   "dependencies": {
-    "commander": "^13.1.0",
+    "commander": "^15.0.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
