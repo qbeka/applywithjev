@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ProfileSchema } from "../src/profile/schema.js";
 import { PROFILE_KEYS, profileFacts, valueFor } from "../src/profile/fieldKeys.js";
-import { authForCountry, educationDatePlan, employmentDatePlan, hasChoosableOptions, planField, questionsFor, sectionOf, valueForJob } from "../src/forms/mapForm.js";
+import { authForCountry, educationDatePlan, employmentDatePlan, hasChoosableOptions, isSlotChoice, planField, questionsFor, sectionOf, valueForJob } from "../src/forms/mapForm.js";
 import { FieldsDump, isApplicationForm, type DumpedField } from "../src/forms/fields.js";
 import type { Job } from "../src/jobs/normalize.js";
 
@@ -200,6 +200,15 @@ describe("work history, signatures and combined contact boxes", () => {
     const answer = { type: "choice" as const, choice: "full_name", probabilities: { full_name: 1 }, confidence: 1 };
     expect(planField(field({ label: "Please Review the NDA and indicate your agreement by typing your full name below", required: true }), answer, profile, j)).toMatchObject({ action: "review", key: "signature" });
     expect(planField(field({ label: "Full name" }), answer, profile, j)).toMatchObject({ action: "fill", value: "Ada Lovelace" });
+  });
+  it("never picks an interview or assessment slot, but still answers ordinary date questions", () => {
+    const opt = (l: string) => ({ value: l, label: l });
+    const slots = field({ kind: "combobox", required: true, label: "Please select your preferred date to complete the assessment on campus", options: ["Wednesday, October 14 (Evening)", "Thursday, October 15 (Evening)", "Unavailable for in-person assessment"].map(opt) });
+    expect(isSlotChoice(slots)).toBe(true);
+    expect(planField(slots, { type: "choice", choice: "o2", probabilities: {}, confidence: 0.9 }, profile, j)).toMatchObject({ action: "review", key: "schedule" });
+    expect(isSlotChoice(field({ kind: "select", label: "When is your expected graduation date?", options: ["December 2026", "May 2027", "Spring 2028"].map(opt) }))).toBe(false);
+    expect(isSlotChoice(field({ kind: "select", label: "Which session of the program?", options: ["Summer (May to August)", "Fall (September to December)"].map(opt) }))).toBe(false);
+    expect(isSlotChoice(field({ kind: "select", label: "Interview availability", options: ["Mon Oct 12, 9:00", "Tue Oct 13, 14:30"].map(opt) }))).toBe(true);
   });
   it("answers a box that wants both a phone and an email with both", () => {
     expect(valueFor(profile, "phone_and_email")).toBe("+1 5555550123, ada@example.com");

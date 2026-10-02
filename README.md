@@ -6,171 +6,331 @@
 [![node >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](.nvmrc)
 [![model: typesafe/jev-1.13](https://img.shields.io/badge/JEV-typesafe%2Fjev--1.13-8A2BE2.svg)](https://openrouter.ai/typesafe/jev-1.13)
 
-Finds software internships and new-grad roles, rates each one against a
-candidate, fills the application form in seconds, verifies every value on the
-page, submits it, and keeps a CSV of everything. Built for one job seeker;
-written so anyone can fork it with their own profile.
+This tool finds software internships and new-grad jobs, fills in the
+application forms for you, checks every answer on the page, and sends the
+applications you approve.
 
-Three parts do the work:
+You stay in charge. The tool sends nothing until you tell it to, and it
+never writes anything about you that is not in your own profile.
 
-| Part | Role |
+## What the tool does
+
+1. **Finds jobs.** It reads public job lists and company job boards, removes
+   the jobs you could not or would not apply to, and ranks the rest for you.
+2. **Fills each form.** It opens the form in a Chrome window you can watch
+   and fills it in a few seconds.
+3. **Checks its work.** It reads every answer back from the page. If an
+   answer did not go in, it tries again. If it still cannot confirm the
+   answer, it stops and tells you which one.
+4. **Sends the form, if you asked it to.** It then reads the page that comes
+   back. It records the job as applied only when that page confirms it.
+5. **Keeps a record.** Every job it looked at is one row in a spreadsheet
+   file, with what happened and why.
+
+## Is this tool for you?
+
+It is for you if you are applying to many software jobs and you want to stop
+typing the same answers into every form.
+
+You need:
+
+- a Mac with Google Chrome
+- [Node.js](https://nodejs.org) version 22 or newer
+- an [OpenRouter](https://openrouter.ai/keys) account with a few dollars of
+  credit
+- [Claude Code](https://code.claude.com), installed and signed in
+- your resume as a PDF
+
+You also need about 20 minutes to describe yourself to the tool the first
+time. See [Set it up](#set-it-up).
+
+## What it costs
+
+Two services do the thinking, and you pay each one separately.
+
+- **JEV** answers the questions that have a fixed set of answers, such as
+  "which of my details goes in this box?" You pay for it through your
+  OpenRouter key.
+- **Claude Code** writes the answers that need sentences, such as "Why do
+  you want to work here?" It runs on the Sonnet 5.5 model at high effort.
+  If you have a Claude subscription, these calls use your plan and you get
+  no separate bill. The dollar figures below are what the same calls cost
+  at API prices.
+
+We measured 10 application forms on 2 October 2026:
+
+| Step | Service | Calls | Tokens in | Tokens out | Cost |
+|---|---|---:|---:|---:|---:|
+| Decide what goes in each field | JEV | 12 | 284,436 | 82,673 | $0.012 |
+| Read the page after sending | JEV | 10 | about 10,000 | about 800 | $0.001 |
+| Write the open answers | Claude Code | 6 | 78,931 | 4,408 | $0.164 |
+| Write two notes per job for your record | Claude Code | 1 | 9,668 | 2,995 | $0.069 |
+| **Total for 10 applications** | | | | | **about $0.25** |
+
+That is about 2.5 cents for each application. JEV is about one twentieth of
+the total.
+
+Three things change the total:
+
+- **Finding jobs costs about 6 cents each time you run it.** That run rates
+  about 350 jobs.
+- **Forms with more open questions cost more.** Four of the 10 forms had no
+  open question and needed no Claude call at all.
+- **The first form of a run costs 3 to 4 cents more.** Claude stores your
+  profile on the first call and reuses it for the next hour at a tenth of
+  the price.
+
+A larger rehearsal gave the same picture. Filling 51 forms cost $0.06 for
+JEV and $0.84 for Claude, which is about 1.8 cents for each form before the
+notes.
+
+To see what you have spent, run `npx tsx src/cli.ts cost`. Every run that
+fills forms also prints its own cost at the end.
+
+## How well it works
+
+We rehearsed every form in the queue on the three job boards the tool
+supports best: Greenhouse, Ashby and Lever. A rehearsal fills the form and
+sends nothing.
+
+| Measured on 2 October 2026 | Result |
 |---|---|
-| [JEV](https://openrouter.ai/typesafe/jev-1.13) (`typesafe/jev-1.13` via OpenRouter) | Every typed decision: is this job a fit, which profile value fills this field, which dropdown option is right, what kind of page is this. Returns probabilities, not prose. About half a second and $0.00003 per call. |
-| This CLI (TypeScript, Node 22) | Pulls job boards, filters, calls JEV, keeps the queue and the CSV, and drives its own Chrome window over the DevTools protocol: dump the form, fill it with real input events, attach the resume, read every value back. |
-| [Claude Code](https://code.claude.com), run headless on Sonnet 5.5 at high effort | Writes the open questions in the candidate's voice and settles the few fields JEV was unsure of. It gets the facts and the open fields, has no tools, and returns one JSON object. |
+| Forms in the queue | 53 |
+| Forms opened (2 jobs had closed) | 51 |
+| Answers the tool meant to enter | 1,002 |
+| Answers confirmed on the page | 1,000 (99.8%) |
+| Forms ready to send with no help | 45 of 51 |
+| Forms the tool held for you, with the reason | 4 |
+| Forms with an answer the tool could not confirm | 2 |
+| Time to fill one form | about 7 seconds |
+| Time for all 53 forms, with the written answers | about 5 minutes |
 
-A full discover run over about 4,500 postings rates roughly 350 fresh
-software roles for six cents. A Greenhouse, Lever or Ashby form is filled and
-verified in 2 to 12 seconds; ten forms side by side take about a minute and a
-half including the written answers.
+We also read every answer in an earlier rehearsal, one by one. That found
+seven wrong answers in about 500. Each one pointed to a cause, such as a
+checkbox named after the option above it, and each cause is now fixed and
+covered by a test. A rehearsal shows you every answer before anything is
+sent, so read it the first time you use the tool.
 
-## How a run works
+A form is "ready" only when every answer is confirmed and no required
+question is empty. The tool will not send any other form.
 
-```
-discover                        apply (per job, forms side by side)
-  sources ─┐                      open the form in the runner's Chrome
-  simplify │                      dumpFields.js → every field, every dropdown's options
-  github   ├→ dedupe → code       mapForm (one JEV call) → fill plan
-  boards   │  filters → fetch     fill + attach resume → read every value back
-  sheet   ─┘  descriptions →      second look (JEV) at dropdowns that refused a value
-            JEV rating →          resolve (Claude) → open questions and unsure fields
-            queue.json + CSV      ready? → submit → page-state (JEV) → CSV
-```
+The tool holds a form for you when a required question has no true answer
+in your profile, or when the answer is yours to give. Examples from the
+rehearsal: a form that asks you to rate a skill you never listed, a form
+that asks you to type your name to sign an agreement, and a form that asks
+you to pick a date for a test.
 
-1. **Discover** (no browser). Reads the SimplifyJobs internship and new-grad
-   lists, three community Canadian lists, and polls the Greenhouse, Lever and
-   Ashby boards of every company those lists mention. One posting reached by
-   several links is one job. Code removes what the candidate would never
-   apply to (Workday and other account-walled portals, stale postings,
-   non-software titles, US roles that say no sponsorship). JEV answers
-   fifteen typed questions per remaining job and code turns them into a
-   score and a ranked queue.
-2. **Fill.** For each queued job the runner opens the direct form URL,
-   serializes every field with `src/forms/dumpFields.js`, reads each
-   dropdown's real options, and asks JEV in one call which profile value or
-   option fills each field. It writes the values, attaches the resume and
-   reads every control back. A value that did not stick is retried with real
-   clicks and typing. A dropdown that refused the value gets a second JEV
-   look at its closest options.
-3. **Resolve.** What is still open (written answers, low-confidence fields,
-   values the page refused) goes to Claude with the candidate's facts,
-   standing answers and voice guide. Claude answers, or says a required field
-   cannot be answered truthfully, in which case the job is set aside for a
-   person with the reason.
-4. **Submit.** Only a form with every wanted value confirmed on the page and
-   no required field empty is submitted, and only when the run was started
-   with `--submit`. The page after the click is classified by JEV. A
-   validation error, a CAPTCHA or a login is recorded, never guessed past.
-5. **Record.** `data/applications.csv` has one row per job considered, in
-   the fifteen columns of a common tracking sheet plus the tool's own (fit
-   score, JEV confidence, ATS, source, posted date, skip reason).
+## Set it up
 
-## What it handles
+1. Get the code and install it.
 
-| Job board | State |
+   ```bash
+   git clone https://github.com/qbeka/applywithjev && cd applywithjev
+   npm install
+   ```
+
+2. Add your OpenRouter key. Copy the example file, then open `.env` and
+   paste your key after `OPENROUTER_API_KEY=`.
+
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Describe yourself. Copy the three example files, then edit each copy.
+
+   ```bash
+   cp data/profile.example.json data/profile.json
+   cp data/bank.example.json data/bank.json
+   cp data/voice.md data/voice.local.md
+   ```
+
+   | File | What you put in it |
+   |---|---|
+   | `data/profile.json` | Your details, education, work history, where you may work, and how you want common questions answered |
+   | `data/bank.json` | Your own first drafts for common open questions |
+   | `data/voice.local.md` | How your written answers should sound |
+
+4. Add your resume.
+
+   ```bash
+   cp ~/Downloads/resume.pdf data/resume/resume.pdf
+   ```
+
+   Then set `resume.path` in `data/profile.json` to the full path of that
+   file.
+
+5. Check your profile. This command prints your details back to you. If
+   something is missing, it names the field.
+
+   ```bash
+   npx tsx src/cli.ts answer-context --question "tell us about yourself"
+   ```
+
+[docs/SETUP.md](docs/SETUP.md) explains each step in more detail and lists
+fixes for common problems.
+
+## Apply to jobs
+
+1. **Find jobs.** This takes about a minute and does not open a browser.
+
+   ```bash
+   npx tsx src/cli.ts discover
+   ```
+
+2. **Rehearse.** The tool fills five forms, sends nothing, and closes them.
+   Read the output. Each line shows one question and the answer the page
+   holds.
+
+   ```bash
+   npx tsx src/cli.ts apply --dry --count 5
+   ```
+
+   If an answer is wrong, correct your profile and rehearse again.
+
+3. **Apply.** Choose one of two ways.
+
+   Fill the forms and look at them before anything is sent:
+
+   ```bash
+   npx tsx src/cli.ts apply --count 5
+   npx tsx src/cli.ts submit <job id> <job id>
+   ```
+
+   Or fill and send in one step:
+
+   ```bash
+   npx tsx src/cli.ts apply --count 10 --submit
+   ```
+
+4. **Check the result.** `status` gives you the totals.
+   `data/applications.csv` is the full record, and you can open it in any
+   spreadsheet program.
+
+   ```bash
+   npx tsx src/cli.ts status
+   ```
+
+Stay at your computer while the tool runs. Some forms show a "prove you are
+human" test or email you a code. Only you can do those. Do them in the
+tool's Chrome window, then run `submit` for that job again.
+
+If you use Claude Code, you can type `/discover`, `/apply` and `/profile`
+instead. They run the same steps and help you with any form the tool held.
+
+## What the tool will not do
+
+- **It will not lie.** Your right to work, your education and your dates
+  come from your profile. The tool does not change them to suit a job.
+- **It will not invent facts.** Written answers use only what your profile
+  says.
+- **It will not send a form it has not checked.** Every answer must be
+  confirmed on the page first.
+- **It will not send anything unless you ask.** Sending needs `--submit` or
+  the `submit` command.
+- **It will not sign for you.** If a form asks you to type your name to
+  agree to a contract, the tool leaves it for you.
+- **It will not choose a date for you.** If a form asks you to pick an
+  interview or test slot, the tool leaves it for you.
+- **It will not create accounts or type into a login page.**
+- **It will not solve "prove you are human" tests.**
+- **It will not write a cover letter or give references.** It skips jobs
+  that require them.
+- **It will not give your GPA** unless the form cannot be sent without it.
+
+[docs/SAFETY.md](docs/SAFETY.md) has the full list and shows where each rule
+lives in the code.
+
+## Which job boards work
+
+| Job board | What to expect |
 |---|---|
-| Greenhouse (hosted, embedded, EU) | Filled through the form's own components. Lazy and paginated dropdowns (school, degree, discipline) are read through their loaders. |
-| Ashby | Filled one field at a time, because Ashby saves every field to its server as it changes and drops bursts. Yes/No buttons, school and location search, resume upload with the save confirmed. |
-| Lever | Filled, including the location box that only accepts a picked suggestion. Lever shows a CAPTCHA at submit, which the user solves in the window. |
-| Rippling, BambooHR | Best effort. Custom widgets are filled where they can be confirmed, and anything unconfirmed keeps the form from being submitted. |
-| Jobvite, SmartRecruiters | Skipped at discovery: their forms run over several pages. |
-| Workday, iCIMS, Taleo, Oracle, SuccessFactors, sites behind a login | Skipped at discovery. The tool never creates accounts. A login page met during a run teaches the next discover to skip that site. |
+| Greenhouse | Works well. |
+| Ashby | Works well. The tool fills these forms one field at a time, because Ashby saves each field as you type. |
+| Lever | Works well. Lever shows a "prove you are human" test when you send, which you do yourself. |
+| Rippling, BambooHR | Works in part. The tool fills what it can confirm and holds the form if anything is uncertain. |
+| Jobvite, SmartRecruiters | Not supported yet. Their forms run over several pages. The tool skips these jobs when it finds jobs. |
+| Workday, iCIMS, Taleo, Oracle, and any site that needs a login | Not supported. The tool skips these jobs. If it meets a login page during a run, it remembers that site and skips it next time. |
 
-## Setup
+## Where your information goes
 
-See `docs/SETUP.md`. In short:
+- Your profile, your drafts, your resume and your record of applications
+  stay on your computer. Git ignores all of them, so you cannot commit them
+  by accident.
+- The job text and the facts in your profile go to OpenRouter when JEV rates
+  a job or maps a form.
+- The job text, your facts and the open questions go to Anthropic, through
+  your own Claude Code sign-in, when a form has questions for Claude.
+- Your answers go to the employer's job board.
+- Nothing goes anywhere else. The tool collects no usage data.
 
-```bash
-git clone https://github.com/qbeka/applywithjev && cd applywithjev
-npm install
-cp .env.example .env                              # add your OpenRouter key
-cp data/profile.example.json data/profile.json    # fill in your details
-cp data/bank.example.json data/bank.json          # your drafts for common questions
-cp data/voice.md data/voice.local.md              # how your answers should sound
-cp ~/Downloads/resume.pdf data/resume/resume.pdf
-npx tsx src/cli.ts discover                       # builds the queue, no browser needed
-npx tsx src/cli.ts apply --dry --count 5          # rehearsal: fill, resolve, submit nothing
-npx tsx src/cli.ts apply --count 10 --submit      # the real thing
-```
+One thing to know before you rehearse: some job boards save each answer as
+it is typed, before you send the form. Ashby does this. A rehearsal on such
+a board leaves an unsent draft on that board. The employer is not told, and
+it is not an application.
 
-Requires Node 22, Google Chrome, an OpenRouter key, and Claude Code installed
-and logged in (for the written answers). The profile, drafts, resume, queue
-and CSV are git-ignored.
+## Make it yours
+
+Everything about you is in data files, not in the code.
+
+- **Standing answers.** The `answers` list in `data/profile.json` says how
+  you want recurring questions answered. For example: which area of
+  engineering you prefer, whether you will relocate, and whether you agree
+  to text messages. JEV and Claude both follow this list. If the tool gives
+  a wrong answer, you fix it once, here.
+- **Your drafts.** `data/bank.json` holds your starting draft for each
+  common open question.
+- **Your voice.** `data/voice.local.md` tells Claude how you write.
+- **Settings.** `src/config.ts` holds every setting in one place: the job
+  lists, the scoring, how many forms run at once, how fast the tool works on
+  each site, and which Claude model writes.
 
 ## Commands
 
+Run each command as `npx tsx src/cli.ts <command>`.
+
 | Command | What it does |
 |---|---|
-| `discover [--no-boards] [--limit N]` | Build the queue and update the CSV |
-| `queue [--all]` | Show queued jobs by score |
-| `apply [ids...] [--count N] [--submit] [--dry]` | The whole loop: fill, resolve, verify, and with `--submit` send every form that is ready |
-| `fill [ids...] [--count N] [--dry]` | Fill forms with JEV and stop |
-| `resolve <ids...>` | Hand the open fields of filled forms to Claude and verify |
-| `inspect <id>` | Every field of a filled form as the page shows it now, and the page's own errors |
-| `set <id> --values file.json` | Write values you chose into a filled form |
-| `submit <ids...>` | Submit ready forms and record the outcome |
-| `survey` | Totals over every fill report: fields landed, failed, left open |
-| `mark <id> --status ...` | Record an outcome by hand |
-| `status` | Totals and skip reasons |
-| `answer-context`, `map-form`, `page-state`, `next` | The pieces, for driving a browser yourself |
+| `discover` | Finds and ranks jobs |
+| `queue` | Lists the ranked jobs |
+| `apply [ids] [--count N] [--submit] [--dry]` | Fills, checks and, with `--submit`, sends |
+| `fill [ids] [--count N] [--dry]` | Fills forms and stops |
+| `resolve <ids>` | Asks Claude to answer what is still open on filled forms |
+| `inspect <id>` | Shows what a filled form holds now, and any errors on the page |
+| `set <id> --values file.json` | Writes answers you chose into a filled form |
+| `submit <ids>` | Sends forms that are ready |
+| `status` | Shows totals and the reasons jobs were skipped |
+| `cost [--since time]` | Shows what you have spent on JEV and Claude |
+| `survey` | Shows how well recent fills went |
+| `mark <id> --status ...` | Records an outcome by hand |
 
-Run any of them with `npx tsx src/cli.ts <command>`. Inside Claude Code,
-`/discover`, `/apply` and `/profile` do the same with a person in the loop.
+## How it works
 
-## Making it yours
+Three parts share the work.
 
-Everything about the candidate is data, and none of it is in git:
+| Part | Its job |
+|---|---|
+| [JEV](https://openrouter.ai/typesafe/jev-1.13) | Makes every choice that has a fixed set of answers. It returns probabilities, not text. One call takes about half a second. |
+| This program | Finds jobs, applies the rules, drives Chrome, and checks every answer on the page. |
+| [Claude Code](https://code.claude.com) | Writes the answers that need sentences. It also decides the few fields JEV was unsure about. It gets your facts and the open questions, and it has no other tools. |
 
-- `data/profile.json`: facts, education, work authorization, demographics,
-  preferences, and `answers`, the standing answers to questions that recur
-  (which area of engineering, relocation, notice period, text-message
-  consent, what to do when a posting wants another graduation date). JEV and
-  Claude both follow them, so a wrong answer is fixed once, in one place.
-- `data/bank.json`: your own starting drafts for the common open questions.
-- `data/voice.local.md`: how written answers should sound.
-- `src/config.ts`: every tunable. Sources, thresholds, score weights, how
-  many forms run side by side, pacing per site, the writer's model.
+The rule is simple. If a question has a fixed set of answers, JEV answers
+it. If it needs a sentence, Claude writes it. If it is a rule, the code
+enforces it.
 
-## Project structure
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes each step.
+[docs/JEV.md](docs/JEV.md) explains how the tool asks JEV its questions.
+[docs/SOURCES.md](docs/SOURCES.md) lists where the jobs come from.
 
-```
-applywithjev/
-├── .claude/               settings (Sonnet 5.5, high effort) and the skills: apply, discover, profile
-├── src/
-│   ├── cli.ts             commander entry point
-│   ├── config.ts          every tunable: paths, thresholds, weights, limits, pacing
-│   ├── discover.ts        sources → filters → describe → rate → queue
-│   ├── jev/               Decisions API client, question builders, zod types
-│   ├── profile/           profile schema; the canonical field keys JEV maps onto
-│   ├── sources/           simplify, github lists, greenhouse/lever/ashby boards, sheet import
-│   ├── jobs/              Job model and posting ids, hard filters, walled sites, JEV rating, queue
-│   ├── forms/             dumpFields.js, fillFields.js, pageHelpers.js, the mapper, page state
-│   ├── browser/           the DevTools client and the form runner: fill, verify, resolve, submit
-│   ├── answers/           answer bank, drafting context, the Claude writer
-│   └── log/               the CSV
-├── data/                  example profile, example drafts, voice guide; real data git-ignored
-├── docs/                  ARCHITECTURE, JEV, SETUP, SOURCES, SAFETY
-└── tests/                 vitest, offline, real captured fixtures
-```
+## Get help or contribute
 
-## Safety
-
-The tool never lies on a form. Work authorization, education and dates come
-from the profile and are not adjusted to fit a posting. It never creates
-accounts, never solves CAPTCHAs (the window is visible and the user does),
-never writes a cover letter, never volunteers a GPA, and never claims a fact
-that is not in the profile. It never types into a page that shows a password
-box. It submits a form only when every value it meant to enter is confirmed
-on the page, and it treats what the page says after the click as the truth.
-`docs/SAFETY.md` has the full list, including what leaves your machine.
-
-## Contributing
-
-Issues and pull requests are welcome. Read `CONTRIBUTING.md` first; the
-short version is: tests with every change, no personal data in fixtures,
-tunables in `src/config.ts`. Security reports go through
-`SECURITY.md`, not public issues.
+- Something went wrong? See the fixes in [docs/SETUP.md](docs/SETUP.md),
+  then open an issue.
+- A form was filled wrongly? Open a "wrong field mapping" issue with the
+  link to the job. Do not include your personal details.
+- Want to change the code? Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+- Found a security problem? Follow [SECURITY.md](SECURITY.md). Do not open a
+  public issue.
 
 ## License
 
-MIT.
+MIT. See [LICENSE](LICENSE).

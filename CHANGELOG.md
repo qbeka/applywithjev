@@ -30,7 +30,15 @@ Keep a Changelog and the project uses Conventional Commits.
 - Sites found behind a login during a run are remembered and skipped by the
   next discover.
 
+- `cost` command and a cost summary at the end of every `apply` run: JEV and
+  Claude spend by purpose, per form and per ten forms. Every Claude call is
+  logged with its tokens and cost in `data/runs/writer-usage.jsonl`.
+- The README is rewritten in plain language, with measured cost and accuracy
+  tables. `CONTRIBUTING.md` says how the docs are written.
+
 ### Changed
+- The writer costs about half as much: the candidate's context is cached by
+  the provider, and the sheet notes for a run are written in one call.
 - One posting is one job: ids come from the ATS posting id, so the same job
   linked three ways is no longer queued three times.
 - The rating's term and graduation questions are worded from the profile. A

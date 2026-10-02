@@ -124,6 +124,23 @@ and a count of the page's own writes (POST, PUT, PATCH) with any that failed.
 5. After the click, JEV classifies the page. Only `submitted` is recorded as
    applied. Validation errors, a CAPTCHA or a login are recorded as they are.
 
+### Cost
+
+`src/log/cost.ts` reads the two usage logs and reports spend by purpose and
+per form. `apply` prints the cost of its own run at the end, and `cost`
+prints it for any period. Three choices keep the writer cheap:
+
+- The candidate's context (voice guide, facts, drafts) is the system prompt,
+  identical for every form, so the provider caches it. The first call of a
+  run goes alone to store it; the calls after it read it at a tenth of the
+  price.
+- A form with nothing left open makes no writer call at all.
+- The two sheet notes for every job applied to in a run are written in one
+  call, not one call per job.
+
+Measured on ten forms on 2026-10-02: JEV $0.012, Claude $0.23 at API prices.
+The README has the table.
+
 ### Speed
 
 | Step | Typical |
@@ -146,7 +163,8 @@ Job boards answer bursts with errors, so the pacing is part of correctness.
 | `data/bank.json`, `data/voice.local.md` | drafts per intent; the voice guide | the user | the writer, `answer-context` |
 | `data/queue.json` | `QueueFile` v1 | discover, `apply`, `mark` | everything |
 | `data/applications.csv` | 25 columns, first 15 match the user's sheet | discover, `apply`, `submit`, `mark` | the user |
-| `data/runs/jev-usage.jsonl` | one JSON object per JEV call | `JevClient` | `status`, the user |
+| `data/runs/jev-usage.jsonl` | one JSON object per JEV call: label, tokens, cost | `JevClient` | `cost`, the user |
+| `data/runs/writer-usage.jsonl` | one JSON object per Claude call: purpose, job, tokens, cost | the writer | `cost`, the user |
 | `data/runs/<id>.plan.json`, `<id>.report.json` | the dump and plan, and the verified result, per job | `fill`, `resolve` | `resolve`, `inspect`, `submit`, `survey` |
 | `data/runs/browser-session.json` | which tab holds which job | `fill` | `resolve`, `set`, `inspect`, `submit` |
 | `data/runs/chrome-profile/` | the runner's Chrome profile | Chrome | Chrome |

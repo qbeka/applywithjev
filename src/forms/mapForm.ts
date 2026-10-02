@@ -220,6 +220,14 @@ export function employmentDatePlan(f: DumpedField, previous: DumpedField[], prof
   return null;
 }
 
+const SLOT_LABEL = /assess|interview|session|time slot|schedule|appointment|attend|preferred date/i;
+const SLOT_OPTION = /\b(mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s+[a-z]*\s*\d|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{1,2}:\d{2}\b/i;
+
+/** A question that asks the candidate to pick one of several dates or times for an interview, a test or an event. */
+export function isSlotChoice(f: DumpedField): boolean {
+  return SLOT_LABEL.test(f.label) && f.options.filter((o) => SLOT_OPTION.test(o.label)).length >= 2;
+}
+
 /** Typing a name to sign an agreement is the candidate's act, not the tool's. */
 const SIGNATURE_LABEL = /\bNDA\b|non-?disclosure|arbitration agreement|e-?signature|electronic signature|(typ(e|ing)|enter(ing)?) your (full |legal )*name/i;
 
@@ -282,6 +290,7 @@ export function planField(f: DumpedField, answer: Answer | undefined, profile: P
     return { ...base, action: "fill", key: intl ? "phone_with_country_code" : "phone", value: intl ? `${profile.phone.countryCode}${profile.phone.national}` : profile.phone.national, confidence: 1, note: null };
   }
   if (SIGNATURE_LABEL.test(f.label)) return { ...base, action: "review", key: "signature", value: null, confidence: 1, note: "signing an agreement is for the candidate to do" };
+  if (isSlotChoice(f)) return { ...base, action: "review", key: "schedule", value: null, confidence: 1, note: "choosing a date or a time slot is for the candidate to do" };
   if (!answer) return { ...base, action: "review", key: "unknown", value: null, confidence: 0, note: "no answer" };
 
   if (f.kind === "checkbox") {

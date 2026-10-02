@@ -19,8 +19,12 @@ Node 22 (`.nvmrc`). No build step; everything runs through `tsx`.
   `src/discover.ts`. Add a fixture under `tests/fixtures/` and a parser
   test. `docs/SOURCES.md` explains the contract.
 - A new kind of form control: `src/forms/dumpFields.js` (capture it),
-  `src/forms/fillFields.js` (set it), `src/forms/mapForm.ts` (ask JEV about
-  it). Capture a blank real form as a fixture; never a filled one.
+  `src/forms/fillFields.js` or `src/forms/pageHelpers.js` (set it and read
+  it back), `src/forms/mapForm.ts` (ask JEV about it). Capture a blank real
+  form as a fixture; never a filled one.
+- A form that was filled wrongly: rehearse it with
+  `npx tsx src/cli.ts apply --dry <id>`, fix the cause, and rehearse again.
+  `AWJ_TRACE=1` prints step timings and the page's own saves.
 - A new thing JEV should decide: write the question with criteria that are
   definitions, add it next to its siblings, and document it in
   `docs/JEV.md`.
@@ -35,6 +39,22 @@ Node 22 (`.nvmrc`). No build step; everything runs through `tsx`.
   (`feat(forms): handle button groups`). No AI attribution trailers.
 - Keep dependencies at two runtime packages unless there is a strong
   reason.
+
+## How we write
+
+The README and the docs are written for a reader who has never seen the
+project. We follow the plain language principles of ISO 24495-1:2023: the
+reader can find what they need, understand it, and use it.
+
+- Start with what the reader needs most. Put background last.
+- Use headings that say what the section is for.
+- Address the reader as "you". Use the active voice.
+- Keep sentences short, with one idea each.
+- Use everyday words. Explain a term the first time you use it, then use
+  the same term every time.
+- Use a list for steps and a table for comparisons.
+- Give real numbers, say when they were measured, and say what they leave
+  out.
 
 ## Before you push
 
