@@ -109,6 +109,14 @@ export const CODE_PREFIX = "the board emailed you a code";
 const CODE_REASON = `${CODE_PREFIX} to confirm a person is applying. The filled form is open in the tool's window: type the code, click Submit, then run: codes`;
 
 /**
+ * Sites that asked for an emailed code in this run. A site that has started asking will ask every
+ * time, so the rest of its jobs are left in the queue for another day instead of being filled,
+ * clicked and left waiting, each with an email to the person.
+ */
+const askingForCodes = new Set<string>();
+const siteOfUrl = (url: string) => hostOf(url).split(".").slice(-2).join(".");
+
+/**
  * Submissions to one site are spaced out, and only one form is being sent at any moment. A burst
  * from one person reads as a robot. A site known to answer bursts with an emailed code gets a longer pause.
  */
@@ -127,6 +135,13 @@ export function submitAndRecord(jev: JevClient, id: string, force: boolean, keep
   return perSite(siteOf(id), () =>
     oneAtATime(async () => {
       try {
+        if (!force && askingForCodes.has(siteOf(id))) {
+          // Filled before the site began asking. Sending it now would only add one more form waiting on a code.
+          record(id, "queued", null);
+          console.log(`${id}  not sent: this site is asking for an emailed code today. The job stays in the queue.`);
+          await closeJobTab(id);
+          return false;
+        }
         const r = await submitJob(jev, id, force);
         console.log(`${id}  ${r.needsCode ? "needs your code" : r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
         if (r.state === "submitted") {
@@ -138,6 +153,7 @@ export function submitAndRecord(jev: JevClient, id: string, force: boolean, keep
           // Only the person can pass a human check. The tab stays open, filled, for them.
           record(id, "needs_review", CODE_REASON);
           learn(r.url, { emailsCode: true });
+          askingForCodes.add(siteOf(id));
           return false;
         }
         if (r.errors.length) console.log(`  errors: ${r.errors.join(" | ")}`);
@@ -221,6 +237,14 @@ export async function pipeline(entries: QueueEntry[], o: RunOptions): Promise<{ 
     if (await settle(jev, r, o)) sent.push(r.jobId);
   };
   await paced(entries, (e) => hostOf(applyUrlFor(asJob(e))), async (e) => {
+    if (o.submit && askingForCodes.has(siteOfUrl(applyUrlFor(asJob(e))))) {
+      // Not attempted: back in the queue, untouched.
+      record(e.job.id, "queued", null);
+      const held = blockedReport(e.job, "left in the queue: this site is asking for an emailed code today");
+      reports[entries.indexOf(e)] = held;
+      if (!o.quiet) console.log(`\n== ${e.job.company} | ${e.job.title} [${e.job.id}] ${held.reason}`);
+      return held;
+    }
     const first = await fillOnce(jev, profile, e);
     reports[entries.indexOf(e)] = first;
     // The rest of this job's path does not hold a fill slot: the next form starts filling now.

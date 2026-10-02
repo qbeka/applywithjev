@@ -259,7 +259,7 @@ export const RUN = {
   /** The same pause for a site that has answered a burst with an emailed code before. */
   submitGapAfterCodeMs: 75_000,
   /** The pause between two submissions to the same site. A burst of applications from one person looks like a robot, and boards answer it with a human check. */
-  submitGapMs: 20_000,
+  submitGapMs: 45_000,
   /** The most pages of one form the tool will walk. A form that goes on longer is left for the person. */
   maxPages: 8,
   /** How many times a form is opened and filled when values did not land. The second go comes when the other forms are done, with the window to itself. */
