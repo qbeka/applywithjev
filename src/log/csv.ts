@@ -23,6 +23,7 @@ export const SHEET_COLUMNS = [
 
 export const EXTRA_COLUMNS = [
   "Applied On", "Fit Score", "JEV Confidence", "ATS", "Source", "Term", "Level", "Posted On", "Skip Reason", "Job ID",
+  "Response", "Response On",
 ] as const;
 
 export const COLUMNS = [...SHEET_COLUMNS, ...EXTRA_COLUMNS] as const;
@@ -94,7 +95,7 @@ export function saveRows(rows: Row[], file = PATHS.applications, appliedFile: st
 }
 
 /** The columns of applied.csv: lower case, no spaces, one meaning each. */
-export const APPLIED_COLUMNS = ["applied_on", "company", "role", "location", "job_link", "work_auth", "term", "level", "ats", "source", "fit_score", "what_they_do", "why_fit", "notes", "job_id"] as const;
+export const APPLIED_COLUMNS = ["applied_on", "company", "role", "location", "job_link", "work_auth", "term", "level", "ats", "source", "fit_score", "what_they_do", "why_fit", "notes", "job_id", "response", "response_on"] as const;
 export type AppliedRecord = Record<(typeof APPLIED_COLUMNS)[number], string>;
 
 /** One plain record per row of the full file. */
@@ -115,6 +116,8 @@ export function toRecord(r: Row): AppliedRecord & { status: string; skip_reason:
     why_fit: r["Why You're a Fit"],
     notes: r.Notes,
     job_id: r["Job ID"],
+    response: r.Response,
+    response_on: r["Response On"],
     status: r["App. Status"],
     skip_reason: r["Skip Reason"],
   };

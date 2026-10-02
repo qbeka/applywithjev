@@ -65,6 +65,11 @@ describe("csv", () => {
     expect(sent.map((r) => r.company)).toEqual(["Gamma", "Acme"]);
     expect(sent[1]).toMatchObject({ applied_on: "2026-10-01", role: "SWE Intern", job_link: "https://x/1", what_they_do: "Builds rockets.", job_id: "abc" });
   });
+  it("keeps a recorded reply when the row is written again", () => {
+    let rows = upsertEntry([], entry({ status: "applied", appliedAt: "2026-10-01T15:00:00Z" }), { Response: "Interview", "Response On": "2026-10-05" });
+    rows = upsertEntry(rows, entry({ status: "applied", appliedAt: "2026-10-01T15:00:00Z" }));
+    expect(appliedRecords(rows)[0]).toMatchObject({ response: "Interview", response_on: "2026-10-05" });
+  });
   it("writes applied.csv next to the full record, with one header a script can rely on", () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "awj-csv-"));
     const rows = upsertEntry([], entry({ status: "applied", appliedAt: "2026-10-01T15:00:00Z" }));
@@ -72,6 +77,7 @@ describe("csv", () => {
     const [header, first] = parseCsv(readFileSync(path.join(dir, "applied.csv"), "utf8"));
     expect(header).toEqual([...APPLIED_COLUMNS]);
     expect(header?.every((h) => /^[a-z_]+$/.test(h))).toBe(true);
+    expect(header?.slice(-2)).toEqual(["response", "response_on"]);
     expect(first?.[1]).toBe("Acme");
   });
 });
