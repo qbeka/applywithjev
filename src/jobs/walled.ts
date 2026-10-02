@@ -30,10 +30,20 @@ export function learnedWalledHosts(file = PATHS.walledHosts): string[] {
   }
 }
 
-export function isWalled(url: string, learned: string[] = learnedWalledHosts()): boolean {
+/** connected: hosts the person has signed in to with `connect`. A site they are signed in to is not walled. */
+export function isWalled(url: string, learned: string[] = learnedWalledHosts(), connected: string[] = []): boolean {
   const host = hostOf(url);
   if (!host) return false;
+  if (connected.includes(host)) return false;
   return DISCOVER.accountWalledHosts.some((h) => hostIs(host, h)) || learned.includes(host);
+}
+
+/** Takes a site off the learned list, once the person has signed in to it. */
+export function forgetWalledHost(url: string, file = PATHS.walledHosts): void {
+  const host = hostOf(url.includes("://") ? url : `https://${url}`);
+  const hosts = learnedWalledHosts(file);
+  if (!hosts.includes(host)) return;
+  writeFileSync(file, JSON.stringify(hosts.filter((h) => h !== host), null, 2));
 }
 
 /** Records the site of a job that turned out to need a login. The big ATS hosts are never recorded: one company's settings say nothing about the rest. */
