@@ -1,6 +1,8 @@
 ---
 name: discover
 description: Refresh the job queue without a browser. Use when the user says /discover, "find jobs", "refresh the queue", or before an /apply run when the queue is stale. Pulls every source, filters, rates with JEV, writes data/queue.json and data/applications.csv.
+model: claude-sonnet-5-5
+effort: high
 ---
 
 # /discover: build the queue
