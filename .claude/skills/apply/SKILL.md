@@ -17,8 +17,8 @@ Run every command from the repo root with `npx tsx src/cli.ts <command>`.
 
 ## Before the loop
 
-1. `status`. If the queue is empty or older than today, run `/discover` first.
-2. Check the resume exists at `data/profile.json` → `resume.path`. If not, stop and tell the user.
+1. `doctor`. If it names something missing, fix that first (a missing profile means `/setup`).
+2. `status`. If the queue is empty or older than today, run `/discover` first.
 3. Ask the user how many to send and whether to submit, unless they already said. Submitting is never the default.
 
 ## Rehearse first on a new machine or after a code change
@@ -42,8 +42,21 @@ Each form ends in one of these states, and the queue and the CSV are updated to 
 | `READY`, no `--submit` | Filled and verified, waiting. | After the user says go: `submit <id>`. |
 | `filled, not ready` | A required field is empty, a value did not land, or Claude said `needs_review`. The reason is printed and saved. | Read the reason. If the profile can settle it, add a standing answer to `data/profile.json` and run `apply <id>` again. If it needs the user (a self-rating, a quiz, a US address), tell them. |
 | `Claude: skip` | The form needs a cover letter or references. | Nothing, it is recorded as skipped. |
+| `Memory: ...` | The open fields were answered from the answer memory and Claude was not asked. The answers are the ones from the last time this form or this question came up. | Nothing. If an answer is stale, see below. |
 | `blocked` | No form could be opened: a login, an error page, a posting that closed. | Nothing. A login page also teaches the next discover to skip that site. |
 | `not submitted: ...` | The page rejected the submission (validation errors, a CAPTCHA). | See below. |
+
+## The answer memory
+
+Every answer Claude writes is kept in `data/memory.json`. The same form
+again (a rehearsal, then the real run) reuses its answers, so what the user
+read in the rehearsal is what is sent. A question Claude marked as true for
+any company is reused on other forms. Changing the profile, the drafts or
+the voice guide makes the memory start over.
+
+- `memory` lists what is remembered.
+- `memory --forget <text>` drops the entries for a company or a question.
+- `apply --fresh <id>` asks Claude again for that form.
 
 ## Things only a person or you can do
 
@@ -62,4 +75,7 @@ Each form ends in one of these states, and the queue and the CSV are updated to 
 
 ## When done
 
-`status`. Report: how many applied, the time per application, what needs review and why, what was blocked, and the JEV spend (`data/runs/jev-usage.jsonl`). `data/applications.csv` is the record.
+`status` and `log`. Report: how many applied, what needs review and why,
+what was blocked, and the cost the run printed. Tell the user where the
+record is: `applied.csv` at the top of the project folder lists what was
+sent, and `data/applications.csv` lists every job considered.

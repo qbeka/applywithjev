@@ -14,7 +14,7 @@ npx tsx src/cli.ts discover
 ```
 
 It prints counts and the top 50 queued jobs with scores. Takes about a
-minute and costs under ten cents of JEV.
+minute and costs about six cents of JEV.
 
 Then show the user the top 15 as a short table (score, company, title,
 location, posted) and one line of totals. Mention jobs that were skipped for
@@ -28,6 +28,6 @@ Options:
 To include the user's own tracking sheet, they export it as CSV into
 `data/imports/` first; every file there is read on the next discover.
 
-If it fails with an OPENROUTER_API_KEY error, point the user at
-`docs/SETUP.md`. If a source fails, the run continues without it and says so
+If it fails with an OPENROUTER_API_KEY error or a missing profile, run
+`npx tsx src/cli.ts doctor` and follow its next step, or use `/setup`. If a source fails, the run continues without it and says so
 on stderr.

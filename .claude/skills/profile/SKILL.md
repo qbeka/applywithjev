@@ -1,32 +1,37 @@
 ---
 name: profile
-description: Set up or check the candidate profile and voice. Use on first run, when the user says /profile, or when a form answer looked wrong. Validates data/profile.json, the resume path, and shows how answers will sound.
+description: Check or change the candidate profile, the standing answers, the drafts and the voice guide. Use when the user says /profile, when a form answer looked wrong, or when their details changed. For a first run use /setup instead.
 model: claude-sonnet-5-5
 effort: high
 ---
 
-# /profile: the candidate's data
+# /profile: check or change the candidate's data
 
-1. If `data/profile.json` does not exist, copy `data/profile.example.json`
-   to it and ask the user for every value, one short block at a time:
-   name, contact, address, links, education (with the GPA policy), work
-   authorization, demographics (they may answer "prefer not to say"),
-   preferences, resume path. Write the file. Never commit it; it is
-   git-ignored.
-2. Validate: `npx tsx src/cli.ts answer-context --question "tell us about yourself"`.
-   A schema error names the field to fix.
-3. Confirm the resume exists at `resume.path` and is a PDF under 5 MB.
-4. Copy `data/voice.md` to `data/voice.local.md` and read it with the user.
-   Draft one sample answer to "Why do you want to work here?" for a made-up
-   company and ask if it sounds like them. Adjust `data/voice.local.md` and
-   the `facts` list until it does. The local file is git-ignored and is the
-   one the tool uses.
-5. Copy `data/bank.example.json` to `data/bank.json` and rewrite each draft
-   with the user's own facts. These are the starting points for the common
-   open questions.
-6. Fill `answers` in the profile: how the user wants recurring questions
-   answered (which engineering area, relocation, notice period, text-message
-   consent, a posting that asks for another graduation date). JEV and Claude
-   both follow them.
-7. Remind them: anything not in `facts`, `experience`, `projects` or
-   `answers` will never appear in an application.
+If `data/profile.json` does not exist, this is a first run: use the
+`/setup` skill instead.
+
+1. Run `npx tsx src/cli.ts doctor`. A schema error names the field to fix.
+2. Ask what the user wants to change, or which answer on a form was wrong.
+3. Make the change in the right place:
+
+   | What was wrong | Where to change it |
+   |---|---|
+   | A detail about the person: contact, education, dates, work authorization | the matching field in `data/profile.json` |
+   | A claim in a written answer, or a missing one | `facts`, `experience` or `projects` in `data/profile.json` |
+   | How a recurring question is answered (relocation, text messages, notice period, pay, history) | `answers` in `data/profile.json` |
+   | How written answers sound | `data/voice.local.md` |
+   | The starting draft for a common open question | `data/bank.json` |
+
+   The full list of questions the profile answers is in
+   [../setup/questions.md](../setup/questions.md).
+4. Run `npx tsx src/cli.ts doctor` again, then rehearse the form that was
+   wrong: `npx tsx src/cli.ts apply --dry <job id>`.
+
+Things to know:
+
+- Any change to the profile, the drafts or the voice guide makes the tool
+  forget its remembered answers, so the next run asks Claude again with the
+  corrected facts. That is on purpose.
+- Anything not in `facts`, `experience`, `projects` or `answers` will never
+  appear in an application.
+- These files are git-ignored. Never commit them.
