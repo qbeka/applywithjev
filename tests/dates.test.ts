@@ -72,6 +72,7 @@ describe("showsValue", () => {
     expect(showsValue("Edmonton", "Edmonton, AB, Canada")).toBe(true);
     expect(showsValue("Edmonton, Alberta, Canada", "Edmonton, AB, CAN")).toBe(true);
     expect(showsValue("Edmonton, Alberta, Canada", "Calgary, AB, CAN")).toBe(false);
+    expect(showsValue("Canada", "+1 CA")).toBe(true);
   });
   it("rejects a box that shows something else", () => {
     expect(showsValue("May 2027", "02/27/")).toBe(false);

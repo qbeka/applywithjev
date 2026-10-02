@@ -93,6 +93,8 @@ export function showsValue(want: string, shown: string): boolean {
   // A place picked from a list comes back in the list's own spelling: "Edmonton, Alberta, Canada" shows as "Edmonton, AB, CAN".
   const place = (x: string) => x.split(",")[0]?.trim() ?? "";
   if (w.includes(",") && s.includes(",") && place(w).length >= 3 && place(w) === place(s)) return true;
+  // A pick shown as its short form: "Canada" chosen, "+1 CA" shown.
+  if (/[a-z]/.test(w) && s.split(/[^a-z]+/).some((part) => part.length >= 2 && (w.split(/[^a-z]+/)[0] ?? "").startsWith(part))) return true;
   const bare = (x: string) => x.replace(/^https?:\/\/(www\.)?/, "").replace(/\/+$/, "");
   return bare(w) === bare(s);
 }

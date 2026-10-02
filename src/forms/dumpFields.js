@@ -115,6 +115,13 @@
     const said = fileQuestion(el) || ownName(el) || (el.name || el.id || "").replace(/[-_]+/g, " ");
     return said && !FILE_BUTTON.test(said) ? `${said.replace(/\s*[*✱]\s*$/, "")} (${label || "file"})`.slice(0, LABEL_MAX) : label;
   };
+  // The heading of the box a control sits in: the form's own label for the question, when the control itself carries no id for it.
+  const fieldHeading = (el) => {
+    const box = el.closest("fieldset, [class*=field-entry i], [class*=fieldEntry], [data-field-path]");
+    if (!box) return null;
+    const h = [...box.querySelectorAll("label, legend, [class*=question-title i]")].find((l) => !l.querySelector("input, select, textarea") && !(l.htmlFor && document.getElementById(l.htmlFor) && document.getElementById(l.htmlFor) !== el && /^(radio|checkbox)$/.test(document.getElementById(l.htmlFor).type || "")));
+    return h && text(h) ? h : null;
+  };
   const labelFor = (el) => {
     const bits = [];
     if (el.id) document.querySelectorAll(`label[for="${cssEscape(el.id)}"]`).forEach((l) => bits.push(text(l)));
@@ -130,6 +137,7 @@
       const after = next && !next.matches("input, select, textarea") ? text(next) : (el.nextSibling && el.nextSibling.nodeType === 3 ? el.nextSibling.textContent.trim() : "");
       return (after || el.value || el.id || "").replace(/\s*[*✱]\s*$/, "").slice(0, LABEL_MAX);
     }
+    if (!bits.join("").trim()) { const h = fieldHeading(el); if (h) bits.push(text(h)); }
     if (!bits.join("").trim()) bits.push(questionFor(el));
     if (!bits.join("").trim()) {
       // Walk up to a field container and take its first heading or label-like text.
@@ -180,8 +188,9 @@
     const by = el.getAttribute("aria-describedby");
     const bits = [];
     if (by) by.split(/\s+/).forEach((id) => { const n = document.getElementById(id); if (n) bits.push(text(n)); });
-    const c = el.closest("fieldset, [class*=field i], [class*=question i], [class*=form-group i], div");
-    if (c) c.querySelectorAll("p, small, [class*=help i], [class*=hint i], [class*=description i]").forEach((n) => { const t = text(n); if (t && t.length < 400) bits.push(t); });
+    // The box the control sits in, not the wrapper drawn right around the input, which holds no words of its own.
+    const c = el.closest("fieldset, [class*=field-entry i], [class*=fieldEntry], [data-field-path]") || el.closest("[class*=field i], [class*=question i], [class*=form-group i], div");
+    if (c) c.querySelectorAll("p, small, [class*=help i], [class*=hint i], [class*=description i]").forEach((n) => { const t = text(n); if (t && t.length < 400 && !n.querySelector("input, select, textarea")) bits.push(t); });
     return [...new Set(bits)].join(" ").slice(0, 400);
   };
   // The nearest heading or legend above the control, for context like "Education" or "Voluntary self-identification".
@@ -203,7 +212,8 @@
   // A field that says it is optional is optional, whatever the box around it is called.
   // A drawn picker keeps the real, required input out of sight in the same box (Workable's comboboxes).
   const hiddenRequiredTwin = (el) => { const box = el.closest("[data-input-type], [data-ui], [class*=field i]"); return !!box && [...box.querySelectorAll("input[required], select[required]")].some((t) => t !== el && !visible(t)); };
-  const isRequired = (el, label) => !/\(optional\)/i.test(label) && (el.required || el.getAttribute("aria-required") === "true" || /[*✱]\s*$|^\s*[*✱]|\(required\)/i.test(label) || /required/i.test(el.closest("[class*=required i]")?.className || "") || hiddenRequiredTwin(el));
+  const headingSaysRequired = (el) => { const h = fieldHeading(el); return !!h && (/required/i.test(String(h.className)) || /[*✱]\s*$|^\s*[*✱]/.test(text(h))); };
+  const isRequired = (el, label) => !/\(optional\)/i.test(label) && (el.required || el.getAttribute("aria-required") === "true" || /[*✱]\s*$|^\s*[*✱]|\(required\)/i.test(label) || /required/i.test(el.closest("[class*=required i]")?.className || "") || hiddenRequiredTwin(el) || headingSaysRequired(el));
 
   // A plain text input with a suggestion list beside it (Lever's location box) only accepts a picked suggestion.
   const hasSuggestBox = (el) => el.tagName === "INPUT" && !!el.parentElement && !!el.parentElement.querySelector('[class*="dropdown-results" i], [class*="autocomplete" i], [class*="typeahead" i], [class*="suggestions" i]');
