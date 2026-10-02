@@ -8,7 +8,8 @@
 |---|---|---|
 | **Code** (`src/`) | Which sources to read, deterministic filters (ATS, age, flags, title words), location tier from strings, work authorization per country, the score formula, what the CSV says | Judge meaning |
 | **JEV** | Every typed judgement: fit questions per job, which key fills a field, which option, whether a checkbox applies, what kind of page this is | Write text, see pixels, hold state |
-| **Claude Code** (via the skills) | Browser actions, resume upload, free-text answers, the fields JEV was unsure about, anything unexpected | Invent facts, override authorization, create accounts |
+| **The runner** (`src/browser/`) | Opens the form, reads it, writes values with real input events, attaches the resume, reads every value back, clicks Submit on a ready form | Decide what a value should be |
+| **Claude Code** (headless writer, and the skills) | Free-text answers, the fields JEV was unsure about, whether a required field can be answered truthfully at all | Invent facts, override authorization, create accounts, touch the browser |
 
 The rule of thumb: if a question has a finite set of answers, it is JEV's.
 If it needs a sentence, it is Claude's. If it is a rule, it is code.
@@ -25,15 +26,25 @@ boards (greenhouse / lever / ashby for every company seen) ─┘               
 1. **Collect.** Sources run concurrently. Board polling keeps only
    early-career titles (`EARLY_CAREER_TITLE`) because boards list every
    role.
-2. **Dedupe** by canonical URL. Merged records keep the richer fields.
-3. **preFilter** (`src/jobs/hardFilters.ts`): account-walled ATSs, older
-   than `DISCOVER.maxAgeDays`, titles that are plainly not software, French
-   titles, advanced-degree-only, US with no-sponsorship or citizenship flags,
-   unpaid. Reasons are kept and written to the CSV.
+2. **Dedupe** by posting (`postingKey` in `src/jobs/normalize.ts`). The
+   lists and the boards link one job in several ways: a careers page with
+   `gh_jid`, the board page, the embedded form, Ashby's `/application`. The
+   big three are keyed by the ATS's own posting id, everything else by its
+   canonical URL, so one posting is one queue entry and one CSV row. Merged
+   records keep the richer fields.
+3. **preFilter** (`src/jobs/hardFilters.ts`): account-walled ATSs and
+   careers sites (`src/jobs/walled.ts`: a list in config plus the sites an
+   apply run found behind a login), boards whose forms run over several
+   pages, older than `DISCOVER.maxAgeDays`, titles that are plainly not
+   software, French titles, advanced-degree-only, US with no-sponsorship or
+   citizenship flags, unpaid. Reasons are kept and written to the CSV.
 4. **describe** (`src/jobs/describe.ts`): ATS API text or page text, capped
    at `JEV.maxDescriptionChars`.
-5. **rateJob** (`src/jobs/rate.ts`): one JEV call, fourteen questions,
-   `scoreFromAnswers` turns them into a score, a decision and reasons.
+5. **rateJob** (`src/jobs/rate.ts`): one JEV call, fifteen questions,
+   `scoreFromAnswers` turns them into a score, a decision and reasons. The
+   term and graduation questions are worded from the profile's own
+   graduation date. A posting that asks for another graduation date is
+   ranked lower, not dropped: applying is the candidate's call.
 6. **Queue** (`src/jobs/queue.ts`): sorted by score then recency. Entries
    from a previous run keep terminal statuses (applied, skipped, blocked) so
    nothing is applied to twice. Jobs already in a terminal state are not
@@ -41,69 +52,116 @@ boards (greenhouse / lever / ashby for every company seen) ─┘               
 
 Timing on 2026-10-02: 4,748 unique postings, 478 rated, 61 seconds, $0.075.
 
-## Apply loop (`.claude/skills/apply/SKILL.md`)
+## Apply loop (`src/browser/formRunner.ts`, `apply` in `src/cli.ts`)
 
-Per job, in the user's Chrome:
+Per job, in the runner's own Chrome window, several forms side by side:
 
 ```
-next ─→ navigate(applyUrl) ─→ dumpFields.js ─→ map-form (JEV) ─→ fillFields.js
-                                   │                                 upload resume
-                                   │                                 Claude drafts free text
-                                   └─ <3 fields? frames / page-state ─→ click Apply, or mark blocked
-submit ─→ read_page ─→ page-state (JEV) ─→ submitted: mark applied | form: next page | error: fix once
+fillJob
+  openForm ─→ the form URL, or its embedded ATS frame, or behind an Apply button
+     │         password box → blocked, nothing typed
+     │         error page → one unhurried retry
+  dumpFields.js ─→ readDropdownOptions ─→ mapForm (JEV) ─→ applyFills ─→ uploads
+     │                                                      read back, retry what did not stick
+  secondLook ─→ JEV again, on the closest real options of a dropdown that refused a value
+  report ─→ data/runs/<id>.report.json: every field, what the page shows, ready or not
+resolveJob ─→ open fields → Claude (headless, no tools) → applyFills → read back → ready?
+submitJob ─→ refuse unless ready ─→ re-read required fields ─→ click ─→ page-state (JEV) ─→ CSV
 ```
 
 `applyUrl` (`applyUrlFor` in `src/jobs/normalize.ts`) is the direct form:
-Greenhouse's server-rendered embed page, Lever's `/apply`, Ashby's
-`/application`. That skips the company's marketing page and its scripts.
+Greenhouse's embed page, Lever's `/apply`, Ashby's `/application`.
+
+### The browser layer (`src/browser/cdp.ts`)
+
+A small DevTools Protocol client with no dependency: Node 22 ships `fetch`
+and `WebSocket`. It starts Chrome with its own profile under
+`data/runs/chrome-profile`, a visible window the user can watch and take
+over, and background throttling off so a tab behind another one still runs.
+It gives the runner `evaluate`, real mouse and key input, file attachment,
+and a count of the page's own writes (POST, PUT, PATCH) with any that failed.
 
 ### The form contract (`src/forms/fields.ts`)
 
 - `dumpFields.js` runs in the page and returns a `FieldsDump`: every
-  visible control with a stable `id` (f0, f1, …), a CSS `selector` that
-  finds it again, `kind`, `label` (from `<label for>`, aria attributes, the
-  enclosing label, or the nearest heading), `hint`, `required`, current
-  `value`, `options` for selects, radios, button groups and open
-  comboboxes, plus the submit buttons and any embedded ATS iframes.
-- `mapForm` sends the fields and the candidate's facts to JEV in chunks of
-  `FORM.fieldsPerCall` and returns a `FillPlan`: per field an `action`
-  (`fill`, `upload`, `draft`, `skip`, `review`), the chosen `key`, the
-  `value`, and `confidence`; plus the four ready-to-use lists `fills`,
-  `uploads`, `drafts`, `reviews`.
-- `fillFields.js` applies `fills` in one pass: native value setters so React
-  sees the change, `input` and `change` events, select by value then label,
-  radios and button groups by label, checkboxes by click, comboboxes by
-  typing then clicking the matching visible option. It returns what was
-  applied and what failed.
+  visible control with an `id` (f0, f1, …), a CSS `selector` that names
+  exactly one element, `kind`, `label`, `hint`, `required`, current `value`,
+  `options`, the submit buttons, embedded ATS iframes, and whether the page
+  shows a password box. Labels come from `<label for>`, aria attributes or
+  the enclosing label; a placeholder-style label ("Select", "Search") is
+  replaced by the question text just above the control. Ids a UI library
+  numbers on each render are not used as selectors. Button groups, Ashby's
+  Yes/No buttons and role-based radio rows are read as one radio field.
+- `mapForm` sends the fields and the candidate's facts and standing answers
+  to JEV in chunks of `FORM.fieldsPerCall` and returns a `FillPlan`: per
+  field an `action` (`fill`, `upload`, `draft`, `skip`, `review`), the chosen
+  `key`, the `value`, and `confidence`. A list too long to show (countries,
+  schools) is asked as "which value belongs here" and matched in code. Keys
+  that would write the same text add their probabilities. A required salary
+  box gets the profile's standing wording. An open question is always a
+  draft, however unsure JEV is of its intent.
+- `fillFields.js` writes plain controls: native value setters so React sees
+  the change, `input` and `change` events, select by value then label,
+  radios and button groups by label, checkboxes by click.
+- `pageHelpers.js` reads dropdown components through their own props, which
+  is instant and needs no clicking: react-select (Greenhouse) by `options`,
+  `selectOption` and `loadOptions`; Ashby's search boxes by `onSearch`,
+  `results` and `onSelect`. Anything else is opened with real clicks and
+  typing, one tab at a time because that needs the tab in front.
 
-### Speed budget
+### Verification, in layers
 
-Per form page: one `navigate`, one `javascript_tool` (dump), one CLI call
-(JEV, about a second), one `javascript_tool` (fill), one upload, zero to
-two `form_input` calls for drafts, one click, one `read_page`, one CLI call
-(page state). About eight to ten tool calls and two JEV calls. Claude's own
-thinking and the drafts are the variable cost. Expect 20 to 30 applications
-an hour on Greenhouse, Lever and Ashby at first; the two cheapest speedups
-are batching navigate+dump into one `browser_batch` call and pre-drafting
-the bank answers per company before the loop.
+1. Every fill is read back from the control. Empty means one retry with real
+   input, then a failure with the reason.
+2. A control the form switched off after another answer is not a failure. A
+   control whose selector no longer matches is.
+3. A form that saves each field to its server (Ashby) is filled one field at
+   a time, each waiting for its save. A refused save or upload is retried
+   once, then fails the form.
+4. A form is `ready` only with no draft, review or failure left and no
+   required field empty. `submit` refuses anything else and re-reads the
+   required fields first.
+5. After the click, JEV classifies the page. Only `submitted` is recorded as
+   applied. Validation errors, a CAPTCHA or a login are recorded as they are.
+
+### Speed
+
+| Step | Typical |
+|---|---|
+| Open the form | 1 to 3 s (7 s behind a careers page that redirects) |
+| Dump, read dropdown options | under 1 s |
+| JEV mapping | about 0.5 s, $0.001 |
+| Fill and read back | 0.2 s on Greenhouse, 3 to 6 s on Ashby (per-field saves) |
+| Claude, when a form has open fields | 10 to 25 s, three forms at a time |
+
+Forms run `RUN.fillConcurrency` at once, `RUN.perHostConcurrency` per site
+with `RUN.hostGapMs` between starts, and one at a time on `RUN.gentleHosts`.
+Job boards answer bursts with errors, so the pacing is part of correctness.
 
 ## Files
 
 | Path | Format | Written by | Read by |
 |---|---|---|---|
 | `data/profile.json` | `ProfileSchema` | the user | everything |
-| `data/queue.json` | `QueueFile` v1 | discover, `next`, `mark` | `next`, `status`, `map-form`, `answer-context` |
-| `data/applications.csv` | 25 columns, first 15 match the user's sheet | discover, `mark` | the user |
+| `data/bank.json`, `data/voice.local.md` | drafts per intent; the voice guide | the user | the writer, `answer-context` |
+| `data/queue.json` | `QueueFile` v1 | discover, `apply`, `mark` | everything |
+| `data/applications.csv` | 25 columns, first 15 match the user's sheet | discover, `apply`, `submit`, `mark` | the user |
 | `data/runs/jev-usage.jsonl` | one JSON object per JEV call | `JevClient` | `status`, the user |
-| `data/runs/fields.json`, `plan.json`, `page.txt` | scratch for the current job | the skill | the skill |
+| `data/runs/<id>.plan.json`, `<id>.report.json` | the dump and plan, and the verified result, per job | `fill`, `resolve` | `resolve`, `inspect`, `submit`, `survey` |
+| `data/runs/browser-session.json` | which tab holds which job | `fill` | `resolve`, `set`, `inspect`, `submit` |
+| `data/runs/chrome-profile/` | the runner's Chrome profile | Chrome | Chrome |
+| `data/cache/walled-hosts.json` | careers sites found behind a login | `apply` | discover |
 | `data/cache/http/` | cached GET bodies keyed by URL hash | `getText` | `getText` |
 
-## Why not a Chrome extension or Playwright
+## Why its own Chrome window and no browser library
 
-A custom extension or a Playwright script would be faster per form but
-would need its own login state, its own CAPTCHA story, and its own
-judgement for the unexpected. Claude in Chrome already has the user's
-sessions and can look at a page when the plan does not fit. The code is
-arranged so the browser layer could be swapped (the scripts are plain
-JavaScript, the CLI is stateless per call), but version one leans on the
-extension on purpose.
+The first version drove the user's Chrome through the Claude in Chrome
+extension, one tool call per action. It worked and it was slow: a form took
+minutes, a background tab runs its timers once a second, and every value
+passed through the model on its way to the page. The runner talks to Chrome
+directly, so a form is one command and the model only sees what JEV could
+not settle. It needs no Playwright or Puppeteer: the DevTools Protocol is a
+WebSocket and a dozen methods. The price is a separate browser profile with
+no logged-in sessions, which is fine for the forms this tool targets (they
+need no account) and is why a CAPTCHA or an email code still goes to the
+person at the keyboard.

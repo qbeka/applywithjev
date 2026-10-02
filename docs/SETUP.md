@@ -5,8 +5,8 @@
 ## 1. Prerequisites
 
 - **Node 22 or newer**: `node --version`. Install from nodejs.org or `brew install node`.
-- **Google Chrome** with the [Claude in Chrome extension](https://chromewebstore.google.com/detail/claude/fcoeoabgfenejglbffodgkkbkcdhcgfn) (version 1.0.36 or later).
-- **Claude Code** signed in with `/login` on a Pro, Max, Team or Enterprise plan. API-key logins cannot use Chrome.
+- **Google Chrome**. The runner starts its own window with its own profile; your everyday Chrome is not touched.
+- **Claude Code** installed and signed in with `/login`. The tool runs it headless (`claude -p`) on Sonnet 5.5 at high effort to write the open answers.
 - An **OpenRouter** account and key from https://openrouter.ai/keys. Put a few dollars of credit on it; a full run costs cents.
 
 ## 2. Clone and install
@@ -55,11 +55,25 @@ its absolute path, for example `/Users/you/applywithjev/data/resume/resume.pdf`.
 Check it: `npx tsx src/cli.ts answer-context --question "tell us about yourself"`
 prints your facts back; a schema error names the field to fix.
 
-## 5. Your voice
+## 5. Your voice, your drafts, your standing answers
 
-Read `data/voice.md`. It is the style guide for every free-text answer.
-Edit it until a sample answer sounds like you. Run `/profile` inside Claude
-Code to do this interactively.
+```bash
+cp data/voice.md data/voice.local.md
+cp data/bank.example.json data/bank.json
+```
+
+- `data/voice.local.md` is the style guide for every written answer. Edit it
+  until a sample answer sounds like you.
+- `data/bank.json` holds your starting draft for each common question (why
+  this company, a project you are proud of, how you use AI tools). Text in
+  braces is left for Claude to write from the posting.
+- `answers` in the profile are your standing answers to questions that
+  recur: which area of engineering, relocation, notice period, text-message
+  consent, what to do when a posting wants another graduation date. JEV and
+  Claude both follow them.
+
+All three are git-ignored. Run `/profile` inside Claude Code to do this
+interactively.
 
 ## 6. Optional: your existing tracker
 
@@ -77,20 +91,27 @@ npx tsx src/cli.ts discover
 About a minute. It prints totals and the top 50. `npx tsx src/cli.ts status`
 shows skip reasons. `data/queue.json` and `data/applications.csv` now exist.
 
-## 8. First apply run
+## 8. Rehearse, then apply
 
 ```bash
-claude --chrome
+npx tsx src/cli.ts apply --dry --count 5
 ```
 
-Approve the Chrome connection the first time (`/chrome` shows status). Then
-type `/apply`. The first three applications are filled and then paused:
-review the field table Claude prints, type `go` to submit or `skip` to
-move on. After three, it runs on its own. Stay at the computer: Claude in
-Chrome pauses for CAPTCHAs and logins and asks you to handle them.
+A Chrome window opens. Five forms are filled and resolved, nothing is
+recorded, nothing is submitted, and the tabs close. Read the output: one line
+per field with the value the page shows. Fix anything wrong in the profile
+and rehearse again.
 
-To stop at any time, say "stop". `npx tsx src/cli.ts status` and
-`data/applications.csv` show what happened.
+```bash
+npx tsx src/cli.ts apply --count 5             # fill and verify, leave the forms open to look at
+npx tsx src/cli.ts submit <id> <id> ...        # send the ones you are happy with
+npx tsx src/cli.ts apply --count 10 --submit   # or do it all in one go
+```
+
+Stay at the computer: a CAPTCHA or an email verification code is yours to
+handle, in the runner's window. `npx tsx src/cli.ts status` and
+`data/applications.csv` show what happened. Inside Claude Code, `/apply`
+runs the same loop and deals with what needs a second look.
 
 ## Updating
 
@@ -106,7 +127,10 @@ Your `data/` files are untouched by updates.
 |---|---|
 | `OPENROUTER_API_KEY is not set` | Create `.env` as in step 3 |
 | `No profile at data/profile.json` | Step 4 |
-| Chrome tools missing in Claude Code | `/chrome`, then "Reconnect extension"; make sure you signed in with `/login`, not an API key |
-| A site will not let Claude act | Allow it in the extension's site permissions when prompted |
-| Form fields not found on a job page | The job page was the description, not the form. The skill handles this (Apply button, embedded frame). If it persists for one ATS, open an issue with the URL |
+| `Chrome did not start on port 9333` | Install Google Chrome, or set `BROWSER.chromePath` in `src/config.ts` |
+| `could not run claude` | Install Claude Code and run `claude` once to log in |
+| A form comes back `blocked: no form found` | The page was a login, a closed posting, or a board the runner does not walk yet. The reason is in the CSV |
+| A form comes back `filled, not ready` | The reason names the field. Add a standing answer to the profile, or finish it by hand in the window and `submit <id> --force` |
+| Forms on one site start failing with `refused` | The site is rate-limiting. Wait a few minutes; add its host to `RUN.gentleHosts` |
+| `AWJ_TRACE=1` before any command | Prints step timings and the page's own network writes |
 | JEV 429 | The client retries; if it keeps failing, lower `rateConcurrency` in `src/config.ts` |

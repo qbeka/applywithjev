@@ -10,12 +10,15 @@ check before you publish a fork.*
 | Lying on a form. Work authorization, citizenship, education, graduation date and employment dates come from `data/profile.json` and are not changed to fit a posting. | `src/forms/mapForm.ts` resolves authorization per country in code; the `/apply` skill forbids overriding it |
 | Claiming a fact that is not in the profile. Free-text answers may use only `facts`, `experience`, `projects`, and the posting. | `data/voice.md`, `src/answers/context.ts`, the skill |
 | Creating accounts on careers portals. Workday, iCIMS, Taleo, Oracle, SuccessFactors and Amazon Jobs are filtered out before rating. | `src/jobs/hardFilters.ts` |
-| Solving CAPTCHAs. Claude in Chrome pauses on them and the user solves them by hand. | Claude Code behaviour; the skill waits |
+| Solving CAPTCHAs. The runner's window is visible; the user solves them by hand and submits again. | `submitJob` records the page as it is |
+| Typing into a login or account page. A page with a password box is blocked before anything is entered. | `dumpFields.js` (`hasPassword`), `fillJob` |
+| Submitting a form it has not verified. Every wanted value must be read back from the page and no required field may be empty. | `isReady`, `submitJob` in `src/browser/formRunner.ts` |
+| Calling an application sent because the button was clicked. The page after the click is classified, and only a confirmation counts. | `submitJob`, `decidePageState` |
 | Paying for anything, or entering payment details. | The skill |
 | Writing cover letters or volunteering a GPA. A required cover letter skips the job; a required GPA field gets the real number. | `src/profile/fieldKeys.ts`, `planField` |
 | Supplying references. A posting that requires them is skipped and logged. | `src/jobs/rate.ts`, the skill |
 | Clicking "Apply with LinkedIn" or resume-autofill helpers that would overwrite the plan. | `mapForm` skips autofill inputs; the skill |
-| Submitting the first three applications without the user's "go". | `RUN.reviewFirst` in `src/config.ts`, the skill |
+| Submitting without being told to. `apply` fills and verifies; only `--submit` or `submit` sends. | `src/cli.ts`, the skill |
 
 The user can still misrepresent themselves by putting false data in the
 profile. The tool makes that the only way.
@@ -27,8 +30,16 @@ profile. The tool makes that the only way.
 - The OpenRouter key is read from `.env` only. Error bodies are redacted
   before they are printed (`src/jev/client.ts`).
 - What leaves the machine: job text and the profile's facts go to
-  OpenRouter (JEV) on every rating and form-mapping call; the form values go
-  to the employer's ATS; nothing goes anywhere else. There is no telemetry.
+  OpenRouter (JEV) on every rating and form-mapping call; the facts, the
+  posting and the open questions go to Anthropic through your own Claude Code
+  login when a form has fields left for Claude; the form values go to the
+  employer's ATS; nothing goes anywhere else. There is no telemetry.
+- Some boards save each field to their server as it is typed, before
+  anything is submitted. Ashby does. A rehearsal (`--dry`) on such a board
+  therefore sends the values to that board as an unsubmitted draft. It is not
+  an application and the employer is not notified, but it is not nothing.
+- The runner's Chrome profile lives in `data/runs/chrome-profile`, apart
+  from your own browser, with no saved logins.
 - JEV usage is appended to `data/runs/jev-usage.jsonl` (ids, token counts,
   cost; no content).
 - Gmail is opened in Chrome only to click a verification link from a
@@ -37,14 +48,16 @@ profile. The tool makes that the only way.
 ## Terms of service
 
 Automated form submission may be against the terms of a given job board
-or ATS. The tool uses the user's own browser, their own identity, and
-submits one application per posting at human-like pace, with the user
-present. Read the terms of the sites you use and decide for yourself.
+or ATS. The tool uses a browser on the user's own machine and their own
+identity, submits one application per posting, paces itself per site, and
+does not try to look like anything it is not: no stealth flags, no CAPTCHA
+solving, no account creation. Read the terms of the sites you use and decide
+for yourself.
 
 ## Before open-sourcing a fork
 
 ```bash
-git status --ignored | grep data/        # profile.json, resume, csv, queue must be ignored
+git status --ignored | grep data/        # profile.json, bank.json, voice.local.md, resume, csv, queue, runs must be ignored
 git log -p | grep -i -E "sk-or-v1-|@gmail|phone" # nothing should match
 npm audit --omit=dev
 ```
