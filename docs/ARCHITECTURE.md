@@ -218,8 +218,10 @@ Job boards answer bursts with errors, so the pacing is part of correctness.
 | `data/profile.json` | `ProfileSchema` | the user | everything |
 | `data/bank.json`, `data/voice.local.md` | drafts per intent; the voice guide | the user | the writer, `answer-context` |
 | `data/queue.json` | `QueueFile` v1 | discover, `apply`, `mark` | everything |
-| `data/applications.csv` | 25 columns, first 15 match the user's sheet. Every job considered | discover, `apply`, `submit`, `mark` | the user, `log --all` |
-| `applied.csv` | 15 columns with plain names. Only what was sent, newest first. Rebuilt on every save of the file above | the same commands | the user, `log` |
+| `data/applications.csv` | 27 columns, first 15 match the user's sheet. Every job considered | discover, `apply`, `submit`, `mark` | the user, `log --all` |
+| `data/sites.json` | Sites the person signed in to | `connect`, `disconnect` | discover, `fill`, `doctor` |
+| `data/inbox.json` | Mail already judged: job, kind, date, sender, subject (none for a code message) | `inbox`, `codes` | `inbox`, `codes` |
+| `applied.csv` | 17 columns with plain names. Only what was sent, newest first. Rebuilt on every save of the file above | the same commands | the user, `log` |
 | `data/memory.json` | `MemoryFile` v1: whole resolutions by job id, and reusable answers by question | `resolve`, `apply` | `resolve`, `apply`, `memory` |
 | `data/runs/jev-usage.jsonl` | one JSON object per JEV call: label, tokens, cost | `JevClient` | `cost`, the user |
 | `data/runs/writer-usage.jsonl` | one JSON object per Claude call: purpose, job, tokens, cost | the writer | `cost`, the user |
@@ -228,6 +230,34 @@ Job boards answer bursts with errors, so the pacing is part of correctness.
 | `data/runs/chrome-profile/` | the runner's Chrome profile | Chrome | Chrome |
 | `data/cache/walled-hosts.json` | careers sites found behind a login | `apply` | discover |
 | `data/cache/http/` | cached GET bodies keyed by URL hash | `getText` | `getText` |
+
+## Sign-in, codes and mail
+
+**Connected sites (`src/browser/sites.ts`).** `connect <url>` opens the site
+in the runner's window and polls one fixed expression: is a password box on
+the page. `signInState` is a pure function over those looks: the sign-in is
+over when a box was seen and none has been for `SITES.quietMs`. Nothing is
+typed or clicked. The site is saved in `data/sites.json`, taken off the
+learned walled list, and its blocked jobs are queued again. `isWalled`
+treats a connected host as open. When a connected site shows a password box
+during a fill, the job is blocked with "your sign-in has ended".
+
+**Codes (`codes` in `src/cli.ts`).** A board that emails a code to confirm a
+person is applying leaves the job `needs_review` with its tab open.
+`codes` brings each such tab to the front and calls
+`watchForConfirmation`, which reads the page text and asks JEV about it only
+when it changes and no longer shows the code box. The person types the code.
+
+**Mail (`src/mail/`).** `imap.ts` is a small IMAP reader on `node:tls`:
+LOGIN, EXAMINE on the all-mail box, UID SEARCH SINCE, and FETCH with
+BODY.PEEK. Its parsers (`parseAnswer`, `decodeHeader`, `messageText`) are
+pure and tested, and the client is tested against a local server that speaks
+the same protocol. `inbox.ts` matches a header to an applied job
+(`matchJob`: the company named as whole words, from the company or from a
+board's mail system), notes a code message by its subject without opening
+it, and asks JEV one choice question about any other matched message.
+`data/inbox.json` keeps what was judged, so each message costs one call,
+once. The latest reply that says more than "received" goes in the record.
 
 ## Setup and `doctor` (`src/doctor.ts`)
 

@@ -7,7 +7,9 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { BROWSER, DOCTOR, PATHS, ROOT, WRITER } from "./config.js";
+import { BROWSER, DOCTOR, mailCredentials, PATHS, ROOT, WRITER } from "./config.js";
+import { loadSites } from "./browser/sites.js";
+import { Mailbox } from "./mail/imap.js";
 import { JevClient } from "./jev/client.js";
 import { noul } from "./jev/questions.js";
 import { loadQueue } from "./jobs/queue.js";
@@ -90,6 +92,28 @@ export function checkQueue(): Check {
   return { name: "Job queue", ok: queued > 0 && fresh, optional: true, detail: `${queued} jobs queued, last refreshed ${ageHours < 1 ? "under an hour" : `${Math.round(ageHours)} hours`} ago`, fix };
 }
 
+/** Optional extras: reading replies from Gmail, and sites the person has signed in to. */
+export function checkExtras(creds = mailCredentials(), sites = loadSites()): Check[] {
+  return [
+    { name: "Gmail (replies)", ok: !!creds, optional: true, detail: creds ? `set in .env for ${creds.address.replace(/^(.).*(@.*)$/, "$1***$2")}` : "not set up", fix: "To have replies to your applications recorded: add GMAIL_ADDRESS and GMAIL_APP_PASSWORD to .env yourself (a Google app password, see docs/SETUP.md). The tool only reads mail." },
+    { name: "Sites you signed in to", ok: sites.length > 0, optional: true, detail: sites.length ? sites.map((s) => s.host).join(", ") : "none", fix: "To apply on a site that needs a sign-in: npx tsx src/cli.ts connect <url>, and sign in yourself in the window that opens" },
+  ];
+}
+
+/** Signs in to the mailbox and out again: proves the app password works. Nothing is read. */
+export async function checkMailOnline(): Promise<Check> {
+  const fix = "Check GMAIL_ADDRESS and GMAIL_APP_PASSWORD in .env. The password must be a Google app password, and IMAP must be allowed for the account";
+  const creds = mailCredentials();
+  if (!creds) return { name: "Gmail answers", ok: false, optional: true, detail: "not set up", fix };
+  try {
+    const box = await Mailbox.open(creds);
+    await box.close();
+    return { name: "Gmail answers", ok: true, optional: true, detail: "signed in, read-only", fix: "" };
+  } catch (err) {
+    return { name: "Gmail answers", ok: false, optional: true, detail: (err instanceof Error ? err.message : String(err)).slice(0, 200), fix };
+  }
+}
+
 /** One tiny JEV call: proves the key is valid and has credit. */
 export async function checkKeyOnline(): Promise<Check> {
   const fix = "Check the key at https://openrouter.ai/keys and that the account has credit";
@@ -119,10 +143,11 @@ export async function runChecks(online: boolean): Promise<Check[]> {
   const { check: profileCheck, profile } = checkProfile();
   const claude = checkClaude();
   const key = checkKey();
-  const checks = [checkNode(), checkChrome(), claude, key, profileCheck, checkResume(profile), ...checkOwnWords(), checkQueue()];
+  const checks = [checkNode(), checkChrome(), claude, key, profileCheck, checkResume(profile), ...checkOwnWords(), checkQueue(), ...checkExtras()];
   if (online) {
     if (key.ok) checks.push(await checkKeyOnline());
     if (claude.ok) checks.push(checkClaudeOnline());
+    if (mailCredentials()) checks.push(await checkMailOnline());
   }
   return checks;
 }
@@ -131,10 +156,13 @@ export async function runChecks(online: boolean): Promise<Check[]> {
 export function nextStep(checks: Check[]): string {
   const blocking = checks.find((c) => !c.ok && !c.optional);
   if (blocking) return blocking.fix;
-  const optional = checks.find((c) => !c.ok && c.optional);
+  // The extras (Gmail, signed-in sites) are offers, not steps: they are listed, never pressed.
+  const optional = checks.find((c) => !c.ok && c.optional && !EXTRAS.has(c.name));
   if (optional) return optional.fix;
   return "Everything is in place. Rehearse with `npx tsx src/cli.ts apply --dry --count 3`, then apply.";
 }
+
+const EXTRAS = new Set(["Gmail (replies)", "Sites you signed in to", "Gmail answers"]);
 
 export const isReadyToRun = (checks: Check[]) => checks.every((c) => c.ok || c.optional);
 

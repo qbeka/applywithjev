@@ -99,6 +99,21 @@ If the user wants other locations or kinds of roles than the ranking
 prefers, the settings are in `src/config.ts` (`LOCATION_MULTIPLIER`,
 `FIT_WEIGHTS`, `DISCOVER`).
 
+## 6b. Two optional extras
+
+Offer each one once, in a sentence, and move on if the user says no.
+
+- **Sites that need a sign-in.** `status` lists jobs skipped because the
+  "careers site needs an account". If there are any the user cares about,
+  they can run `npx tsx src/cli.ts connect <url>` and sign in themselves in
+  the window that opens. The tool types nothing there. Never ask for, read
+  or type a password.
+- **Replies from Gmail.** The tool can read replies to applications and
+  record them. It needs a Google app password that the user creates and
+  puts in `.env` themselves (`GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`; steps in
+  `docs/SETUP.md`). Say plainly that it only reads mail, and that an app
+  password is a real key to their mailbox. Then `doctor --online`.
+
 ## 7. Rehearse
 
 1. Run `npx tsx src/cli.ts apply --dry --count 3`. A Chrome window opens,

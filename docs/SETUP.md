@@ -142,6 +142,42 @@ A rehearsal is not wasted work. The tool remembers the answers Claude wrote
 again. Changing your profile, drafts or voice guide makes it start over.
 `npx tsx src/cli.ts memory` shows what is remembered.
 
+## 9. Optional: sites that need a sign-in
+
+```bash
+npx tsx src/cli.ts connect <link to the site or to a job on it>
+```
+
+The site opens in the runner's window. Sign in there yourself. The tool
+waits, types nothing, and records the site once no password box has been on
+the page for a few seconds. If you were signed in already, add `--already`.
+`sites` lists what is connected; `disconnect <site>` signs the runner out.
+
+## 10. Optional: replies from Gmail
+
+1. Turn on 2-Step Verification for the Google account.
+2. Create an app password at https://myaccount.google.com/apppasswords.
+3. Put it in `.env` yourself, with the address:
+
+   ```
+   GMAIL_ADDRESS=you@gmail.com
+   GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
+   ```
+
+4. `npx tsx src/cli.ts doctor --online` signs in and out to prove it works.
+5. `npx tsx src/cli.ts inbox` reads replies and records them in
+   `applied.csv` (`response`, `response_on`).
+
+The mailbox is opened read-only. See `docs/SAFETY.md` for what is read and
+what leaves the machine.
+
+## 11. When a board emails you a code
+
+`apply --submit` prints how many forms are waiting for a code.
+`npx tsx src/cli.ts codes` brings each one to the front in turn. Type the
+code from your email, click Submit, and the tool records the application
+and moves on. The tool does not read or type the code.
+
 ## Updating
 
 ```bash
@@ -154,6 +190,8 @@ Your `data/` files are untouched by updates.
 
 | Symptom | Fix |
 |---|---|
+| `Gmail refused the sign-in` | Use an app password, not the account password, and check that IMAP is allowed for the account |
+| `No sign-in page was shown` from `connect` | Open the sign-in page yourself in that window while it waits, or use `--already` if you are signed in |
 | Not sure what is wrong | `npx tsx src/cli.ts doctor --online` names it |
 | `OPENROUTER_API_KEY is not set` | Create `.env` as in step 3 |
 | An answer is stale after you changed something on the form by hand | `npx tsx src/cli.ts apply --fresh <id>`, or `memory --forget <company>` |

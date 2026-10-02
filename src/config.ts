@@ -27,6 +27,10 @@ export const PATHS = {
   memory: path.join(ROOT, "data", "memory.json"),
   cache: path.join(ROOT, "data", "cache"),
   walledHosts: path.join(ROOT, "data", "cache", "walled-hosts.json"),
+  /** Sites the person has signed in to, in the runner's Chrome profile. */
+  sites: path.join(ROOT, "data", "sites.json"),
+  /** Mail already read and what it was, so each message is judged once. */
+  inbox: path.join(ROOT, "data", "inbox.json"),
   runs: path.join(ROOT, "data", "runs"),
   jevUsage: path.join(ROOT, "data", "runs", "jev-usage.jsonl"),
   writerUsage: path.join(ROOT, "data", "runs", "writer-usage.jsonl"),
@@ -211,6 +215,40 @@ export const MEMORY = {
   minWordOverlap: 0.3,
 } as const;
 
+/** Signing in is done by the person, in the runner's window. The tool only watches for it to be over. */
+export const SITES = {
+  /** How long `connect` waits for the person to finish signing in. */
+  connectTimeoutMs: 300_000,
+  /** How often the page is looked at while waiting. */
+  pollMs: 1_000,
+  /** The sign-in counts as done when no password box has been on the page for this long after one was. */
+  quietMs: 4_000,
+} as const;
+
+/** Mail is read, never changed: the mailbox is opened read-only. */
+export const MAIL = {
+  host: "imap.gmail.com",
+  port: 993,
+  /** How far back `inbox` reads when it is not told. */
+  lookbackDays: 21,
+  /** Characters of one message shown to JEV. */
+  maxBodyChars: 4_000,
+  /** Bytes of one message fetched: enough for the text part of a recruiting email. */
+  maxFetchBytes: 60_000,
+  timeoutMs: 30_000,
+  /** Headers are fetched this many messages at a time. */
+  fetchBatch: 200,
+  /** Mail systems that send on behalf of employers. A message from one of them counts as from the company it names. */
+  atsSenders: ["greenhouse-mail.io", "greenhouse.io", "ashbyhq.com", "lever.co", "myworkday.com", "smartrecruiters.com", "rippling.com", "workablemail.com", "workable.com", "bamboohr.com", "icims.com", "successfactors.com", "jobvite.com"],
+} as const;
+
+/** The mailbox to read, from .env. Null when the person has not set it up. */
+export function mailCredentials(): { address: string; password: string } | null {
+  const address = (process.env.GMAIL_ADDRESS ?? "").trim();
+  const password = (process.env.GMAIL_APP_PASSWORD ?? "").replace(/\s+/g, "");
+  return address && password ? { address, password } : null;
+}
+
 /** What `doctor` checks against. */
 export const DOCTOR = {
   minNodeMajor: 22,
@@ -233,6 +271,8 @@ export const RUN = {
   /** Sites that save every field to their server as it changes, and rate-limit bursts: one form at a time, with a longer pause. */
   gentleHosts: ["ashbyhq.com"],
   gentleGapMs: 6_000,
+  /** How long `codes` waits on one form for the person to type the code and send it. */
+  codeWaitMs: 240_000,
   /** The pause between two submissions to the same site. A burst of applications from one person looks like a robot, and boards answer it with a human check. */
   submitGapMs: 20_000,
   /** Longest one form may take to open and fill. A page that never settles is recorded as blocked instead of holding up the run. */

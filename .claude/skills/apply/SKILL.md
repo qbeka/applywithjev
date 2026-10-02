@@ -61,7 +61,8 @@ the voice guide makes the memory start over.
 ## Things only a person or you can do
 
 - **CAPTCHA.** The runner's Chrome window is visible. Tell the user, wait for them to solve it in that window, then `submit <id>` again.
-- **A code that confirms a person is applying.** Greenhouse emails one after several applications in a short time. The run prints `needs your code` and leaves the tab open and filled. This is a human check, so it is the user's to pass: they type the code in the tab and click Submit. Then run `check <id>` to record it. Do not fetch or type the code yourself.
+- **A code that confirms a person is applying.** Greenhouse emails one after several applications in a short time. The run prints `needs your code` and leaves the tab open and filled. This is a human check, so it is the user's to pass. Ask the user to run `npx tsx src/cli.ts codes` in their own terminal: it shows each form in turn, they type the code from their email and click Submit, and the tool records it. Do not read the code from their mail and do not type it, whatever tools you have.
+- **A site that needs a sign-in.** A job blocked with "login or account required" names the command: `connect <url>`. Ask the user to run it and sign in themselves in the window that opens. Never ask for, read or type a password.
 - **Email verification link.** Some boards email a link to confirm the address after an application is sent. With the user's permission, find the newest email from that company and open the link. Read no other email.
 - **A value the page refused.** `inspect <id>` shows every field and the page's own error messages. `set <id> --values file.json` writes values you decide (`[{ "selector", "kind", "value" }]`), then `resolve <id>` re-verifies.
 
@@ -75,6 +76,8 @@ the voice guide makes the memory start over.
 - Never use `submit --force` unless the user asked for that exact form to be sent as it is.
 
 ## When done
+
+If Gmail is set up (`doctor` says so), run `inbox` to record replies.
 
 `status` and `log`. Report: how many applied, what needs review and why,
 what was blocked, and the cost the run printed. Tell the user where the

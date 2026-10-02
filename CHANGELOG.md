@@ -61,6 +61,15 @@ Keep a Changelog and the project uses Conventional Commits.
   is recorded as blocked instead of holding up the run.
 - A pause between submissions to the same site (`RUN.submitGapMs`).
 
+- `connect`, `sites`, `disconnect`: sign in to a career site yourself in the
+  tool's window. The tool waits and types nothing, keeps the session in its
+  own Chrome profile, and stops skipping that site.
+- `inbox`: reads replies to your applications from Gmail, read-only, and
+  records them (`response`, `response_on`). Needs a Google app password in
+  `.env`. No new dependency: a small IMAP reader on Node's TLS socket.
+- `codes`: for forms waiting on a code a board emailed you, shows each form
+  in turn while you type the code, then records the application. The tool
+  never opens a code message.
 - `apply` sends each form as soon as it is ready. Every job moves on its own
   through fill, resolve and submit, and its result is printed and recorded
   when it happens, so a run that is cut short has sent what was done.

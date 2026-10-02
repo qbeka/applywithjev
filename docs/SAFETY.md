@@ -10,7 +10,9 @@ check before you publish a fork.*
 | Lying on a form. Work authorization, citizenship, education, graduation date and employment dates come from `data/profile.json` and are not changed to fit a posting. | `src/forms/mapForm.ts` resolves authorization per country in code; the `/apply` skill forbids overriding it |
 | Claiming a fact that is not in the profile. Free-text answers may use only `facts`, `experience`, `projects`, and the posting. | `data/voice.md`, `src/answers/context.ts`, the skill |
 | Creating accounts on careers portals. Workday, iCIMS, Taleo, Oracle, SuccessFactors and Amazon Jobs are filtered out before rating. | `src/jobs/hardFilters.ts` |
-| Solving CAPTCHAs. The runner's window is visible; the user solves them by hand and submits again. | `submitJob` records the page as it is |
+| Passing a human check. This covers CAPTCHAs and the code a board emails to confirm a person is applying. The runner's window is visible; the person does it there. The code message is never opened by the tool. | `submitJob` records the page as it is; `codes` in `src/cli.ts` shows the form and waits; `isCodeMessage` in `src/mail/inbox.ts` |
+| Changing mail. The mailbox is opened read-only and messages are only peeked at. | `src/mail/imap.ts`: EXAMINE and BODY.PEEK, and no command that writes |
+| Typing a password. Signing in to a site is done by the person in the runner's window; the tool waits and types nothing. | `waitForSignIn` in `src/browser/sites.ts` |
 | Typing into a login or account page. A page with a password box is blocked before anything is entered. | `dumpFields.js` (`hasPassword`), `fillJob` |
 | Submitting a form it has not verified. Every wanted value must be read back from the page and no required field may be empty. | `isReady`, `submitJob` in `src/browser/formRunner.ts` |
 | Calling an application sent because the button was clicked. The page after the click is classified, and only a confirmation counts. | `submitJob`, `decidePageState` |
@@ -46,8 +48,18 @@ profile. The tool makes that the only way.
   from your own browser, with no saved logins.
 - JEV usage is appended to `data/runs/jev-usage.jsonl` (ids, token counts,
   cost; no content).
-- Gmail is opened in Chrome only to click a verification link from a
-  company you just applied to, and only when the success page asks for it.
+- Mail is read only if you add a Gmail app password to `.env`. The sender
+  and subject of recent messages are read on your machine. A message is
+  opened only when its subject or sender names a company you applied to, and
+  its text then goes to OpenRouter so JEV can say what it means. A code
+  message is never opened. What was read is kept in `data/inbox.json`
+  (sender, subject, date, kind), which is git-ignored.
+- An app password gives full access to the mailbox to whoever holds it. The
+  tool uses it only to read. Keep `.env` private and delete the app password
+  in your Google account when you stop using this.
+- Sites you sign in to stay signed in inside the runner's Chrome profile
+  (`data/runs/chrome-profile`). `disconnect <site>` removes a site's cookies
+  and stored data from it.
 
 ## Terms of service
 

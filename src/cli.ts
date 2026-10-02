@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Command } from "commander";
-import { loadEnv, DISCOVER, PATHS, RUN } from "./config.js";
+import { loadEnv, mailCredentials, DISCOVER, MAIL, PATHS, RUN } from "./config.js";
 import { discover } from "./discover.js";
 import { JevClient } from "./jev/client.js";
 import { applyUrlFor } from "./jobs/normalize.js";
@@ -20,9 +20,12 @@ import { mapForm } from "./forms/mapForm.js";
 import { decidePageState } from "./forms/pageState.js";
 import { FieldsDump } from "./forms/fields.js";
 import { ensureBrowser } from "./browser/cdp.js";
-import { checkJob, closeJobTab, fillJob, inspect, loadReport, resolveJob, setValues, submitJob, type Fill, type FillReport } from "./browser/formRunner.js";
+import { checkJob, closeJobTab, fillJob, hasOpenTab, inspect, loadReport, resolveJob, setValues, submitJob, watchForConfirmation, type Fill, type FillReport } from "./browser/formRunner.js";
+import { addSite, forgetSite, hostOf as siteHost, loadSites, saveSites, waitForSignIn } from "./browser/sites.js";
+import { Mailbox } from "./mail/imap.js";
+import { codeArrived, latestReply, loadInbox, REPLY_LABEL, saveInbox, sortMail, type AppliedJob } from "./mail/inbox.js";
 import { hostIs, type Job } from "./jobs/normalize.js";
-import { rememberWalledHost } from "./jobs/walled.js";
+import { forgetWalledHost, rememberWalledHost } from "./jobs/walled.js";
 import { contextFingerprint, logNotes } from "./answers/resolve.js";
 import { loadMemory, prune, saveMemory } from "./answers/memory.js";
 import { formatCost, loadCost } from "./log/cost.js";
@@ -30,6 +33,10 @@ import { formatChecks, isReadyToRun, nextStep, runChecks } from "./doctor.js";
 import { limiter, paced, spacer } from "./util/pace.js";
 
 loadEnv();
+// Output piped into a command that stops reading early (head, a pager) is not an error.
+process.stdout.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EPIPE") process.exit(0);
+});
 const program = new Command();
 program.name("applywithjev").description("Find and rate software jobs with JEV, fill and check each application form in Chrome, and let Claude Code write what needs writing.").version("0.1.0");
 
@@ -304,7 +311,7 @@ program
     console.log(`\nCost of this run\n${formatCost(loadCost(began))}`);
     console.log(`\n${done.filter((e) => e.status === "applied").length} applied, ${done.filter((e) => e.status === "needs_review").length} need review, ${done.filter((e) => e.status === "blocked" || e.status === "skipped" || e.status === "failed").length} blocked, skipped or failed, ${done.filter((e) => e.status === "in_progress").length} filled and waiting for submit`);
     const codes = done.filter((e) => e.status === "needs_review" && (e.statusReason ?? "").startsWith(CODE_PREFIX)).length;
-    if (codes) console.log(`${codes} form(s) are waiting for a code that was emailed to you. Type each one into its tab, click Submit, then run: check <job id>`);
+    if (codes) console.log(`${codes} form(s) are waiting for a code that was emailed to you. Run: codes`);
     console.log(whereTheRecordIs());
     endIfAbandoned();
   });
@@ -456,6 +463,168 @@ program
     }
     await noteApplied(sent);
     console.log(`${sent.length} of ${ids.length} recorded as applied`);
+  });
+
+program
+  .command("connect <url>")
+  .description("Sign in to a job site yourself, in the tool's Chrome window. The tool waits, types nothing, and remembers the site once you are in")
+  .option("--already", "you are signed in there already: just record the site")
+  .action(async (url: string, o: { already?: boolean }) => {
+    const host = siteHost(url);
+    if (!host) throw new Error(`Not a web address: ${url}`);
+    const address = url.includes("://") ? url : `https://${url}`;
+    if (!o.already) {
+      console.log(`Opening ${host} in the tool's Chrome window. Sign in there. Type your password yourself; the tool does not touch the page.`);
+      let said = "";
+      const state = await waitForSignIn(address, {
+        onTick: (s, left) => {
+          const line = s === "waiting" ? "Waiting for you to finish signing in." : s === "no_sign_in_seen" ? "Waiting for the sign-in page. Open it if the site has not shown it." : "";
+          if (line && line !== said) console.log(`${line} (${Math.round(left / 60)} min left)`);
+          said = line || said;
+        },
+      });
+      if (state === "no_sign_in_seen") {
+        console.log(`No sign-in page was shown on ${host}. If you are signed in there already, run: connect ${url} --already`);
+        process.exitCode = 1;
+        return;
+      }
+      if (state !== "signed_in") {
+        console.log(`The sign-in to ${host} was not finished in time. Run connect again when you are ready.`);
+        process.exitCode = 1;
+        return;
+      }
+    }
+    saveSites(addSite(loadSites(), address));
+    forgetWalledHost(address);
+    // Jobs this site blocked for want of a sign-in go back in the queue.
+    const q = loadQueue();
+    let rows = loadRows();
+    let back = 0;
+    for (const e of q.entries) {
+      if (e.status !== "blocked" || siteHost(e.job.url) !== host || !/login|account|sign-in|needs an account/i.test(e.statusReason ?? "")) continue;
+      rows = upsertEntry(rows, updateEntry(q, e.job.id, { status: "queued", statusReason: null }));
+      back++;
+    }
+    saveQueue(q);
+    saveRows(rows);
+    console.log(`${host} is connected.${back ? ` ${back} job(s) there are back in the queue.` : ""} The next discover will keep jobs from this site.`);
+  });
+
+program
+  .command("sites")
+  .description("The job sites you have signed in to")
+  .action(() => {
+    const sites = loadSites();
+    for (const s of sites) console.log(`${s.host.padEnd(40)} connected ${s.connectedAt.slice(0, 10)}`);
+    console.log(sites.length ? `\n${sites.length} site(s). To sign the tool out of one: disconnect <host>` : "No sites connected. To sign in to one: connect <url>");
+  });
+
+program
+  .command("disconnect <host>")
+  .description("Sign the tool's Chrome window out of a site and forget it")
+  .action(async (given: string) => {
+    const host = siteHost(given);
+    await forgetSite(host);
+    saveSites(loadSites().filter((s) => s.host !== host));
+    console.log(`${host} is disconnected. Its cookies and stored data are gone from the tool's Chrome profile.`);
+  });
+
+/** The jobs mail may be about: the ones applied to, and the ones waiting for an emailed code. */
+function jobsForMail(): AppliedJob[] {
+  return loadQueue()
+    .entries.filter((e) => e.status === "applied" || (e.status === "needs_review" && (e.statusReason ?? "").startsWith(CODE_PREFIX)))
+    .map((e) => ({ id: e.job.id, company: e.job.company, title: e.job.title, appliedAt: e.appliedAt }));
+}
+
+/** Reads recent mail and records what is new. Returns null when Gmail is not set up. */
+async function readMail(days: number): Promise<{ news: { job: AppliedJob; kind: string; at: string; subject: string }[] } | null> {
+  const creds = mailCredentials();
+  if (!creds) return null;
+  const jobs = jobsForMail();
+  const box = await Mailbox.open(creds);
+  try {
+    const headers = await box.headersSince(new Date(Date.now() - days * 86_400_000));
+    const { news, inbox } = await sortMail(headers, jobs, loadInbox(), (uid) => box.text(uid), new JevClient());
+    saveInbox(inbox);
+    // The latest reply for each job goes in the record.
+    const q = loadQueue();
+    let rows = loadRows();
+    for (const jobId of new Set(news.map((n) => n.job.id))) {
+      const e = q.entries.find((x) => x.job.id === jobId);
+      const reply = latestReply(inbox, jobId);
+      if (e && reply) rows = upsertEntry(rows, e, { Response: REPLY_LABEL[reply.kind as keyof typeof REPLY_LABEL] ?? "", "Response On": reply.at.slice(0, 10) });
+    }
+    saveRows(rows);
+    return { news: news.map((n) => ({ job: n.job, kind: n.seen.kind, at: n.seen.at, subject: n.seen.subject })) };
+  } finally {
+    await box.close();
+  }
+}
+
+const GMAIL_HOW = "Gmail is not set up. Add GMAIL_ADDRESS and GMAIL_APP_PASSWORD to .env yourself (see docs/SETUP.md). The tool only reads mail.";
+
+program
+  .command("inbox")
+  .description("Read replies from the companies you applied to and record them. Mail is only read, never changed")
+  .option("--days <n>", "how far back to read", (v) => parseInt(v, 10), MAIL.lookbackDays)
+  .option("--json")
+  .action(async (o: { days: number; json?: boolean }) => {
+    const res = await readMail(o.days);
+    if (!res) {
+      console.log(GMAIL_HOW);
+      process.exitCode = 1;
+      return;
+    }
+    if (o.json) return console.log(JSON.stringify(res.news, null, 2));
+    const replies = res.news.filter((n) => n.kind !== "code");
+    for (const n of replies.filter((x) => x.kind !== "received")) console.log(`${(REPLY_LABEL[n.kind as keyof typeof REPLY_LABEL] ?? n.kind).padEnd(20)} ${n.job.company.slice(0, 26).padEnd(26)} ${n.at.slice(0, 10)}  ${n.subject.slice(0, 70)}`);
+    const received = replies.filter((x) => x.kind === "received").length;
+    const codes = res.news.filter((n) => n.kind === "code");
+    console.log(`\n${replies.length} new message(s) about your applications${received ? `, ${received} of them only confirming receipt` : ""}.`);
+    if (codes.length) console.log(`A code was emailed for: ${[...new Set(codes.map((c) => c.job.company))].join(", ")}. Run: codes`);
+    console.log(whereTheRecordIs());
+  });
+
+program
+  .command("codes")
+  .description("Finish the forms that are waiting for an emailed code. The tool shows each form in turn; you type the code and click Submit; it records the result")
+  .action(async () => {
+    const waiting = loadQueue().entries.filter((e) => e.status === "needs_review" && (e.statusReason ?? "").startsWith(CODE_PREFIX));
+    if (!waiting.length) return console.log("No form is waiting for a code.");
+    const jev = new JevClient();
+    // With Gmail set up, the tool can say whether each code has arrived. It never opens a code message.
+    let mail = false;
+    try {
+      mail = !!(await readMail(2));
+    } catch (err) {
+      console.log(`Could not read mail (${err instanceof Error ? err.message : String(err)}). Carrying on without it.`);
+    }
+    let skip = false;
+    if (process.stdin.isTTY) process.stdin.on("data", () => (skip = true));
+    const sent: string[] = [];
+    for (const [i, e] of waiting.entries()) {
+      console.log(`\n${i + 1} of ${waiting.length}: ${e.job.company} | ${e.job.title}`);
+      if (!(await hasOpenTab(e.job.id))) {
+        console.log(`  Its tab is closed. Fill it again with: apply ${e.job.id} --submit`);
+        continue;
+      }
+      if (mail) {
+        const code = codeArrived(loadInbox(), e.job.id);
+        console.log(code ? `  A code was emailed at ${new Date(code.at).toLocaleTimeString()} by ${code.from}. It is in your inbox.` : "  No code email found yet. If none comes, click Submit in the tab to have it sent again.");
+      }
+      console.log(`  The form is in front in the tool's Chrome window. Type the code and click Submit.${process.stdin.isTTY ? " Press Enter here to skip this one." : ""}`);
+      skip = false;
+      const result = await watchForConfirmation(jev, e.job.id, { timeoutMs: RUN.codeWaitMs, stop: () => skip });
+      if (result === "submitted") {
+        record(e.job.id, "applied", null);
+        await closeJobTab(e.job.id);
+        sent.push(e.job.id);
+        console.log("  Sent and recorded.");
+      } else console.log("  Not sent yet. It stays open; run codes again when you are ready.");
+    }
+    if (process.stdin.isTTY) process.stdin.pause();
+    await noteApplied(sent);
+    console.log(`\n${sent.length} of ${waiting.length} sent.\n${whereTheRecordIs()}`);
   });
 
 program

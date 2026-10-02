@@ -209,14 +209,15 @@ date. It ranks the job lower and leaves the choice to you.
 
 | Job board | What to expect |
 |---|---|
-| Greenhouse | Works well. After several applications in a short time, Greenhouse emails you a code to confirm that a person is applying. The tool stops there and leaves the form open. You type the code and send the form, then run `check <job id>` to record it. |
+| Greenhouse | Works well. After several applications in a short time, Greenhouse emails you a code to confirm that a person is applying. The tool stops there. You type the code; see [Codes that a board emails you](#codes-that-a-board-emails-you). |
 | Ashby | Works well. The tool fills these forms one field at a time, because Ashby saves each field as you type. |
 | Lever | Works well. Lever shows a "prove you are human" test when you send, which you do yourself. |
 | Rippling, Workable | Works. Tested on a few forms each. |
 | BambooHR | Works in part. The tool fills what it can confirm and holds the form if anything is uncertain. |
 | Tesla and other forms that run over several pages | The tool fills the first page, sees that the form goes on, and stops. See [What is planned](#what-is-planned). |
 | Jobvite, SmartRecruiters | Not supported yet. Their forms run over several pages. The tool skips these jobs when it finds jobs. |
-| Workday, iCIMS, Taleo, Oracle, SuccessFactors, Amazon, LinkedIn, and any site that needs a sign-in | Not supported yet. The tool skips these jobs. If it meets a sign-in page during a run, it remembers that site and skips it next time. See [What is planned](#what-is-planned). |
+| A company's own career site that needs a sign-in | Works after you sign in to it once, if its form is a single page. See [Connect a site that needs a sign-in](#connect-a-site-that-needs-a-sign-in). Until you do, the tool skips the site. |
+| Workday, iCIMS, Taleo, Oracle, SuccessFactors, Amazon, LinkedIn | Not supported yet. Each needs an account and its forms run over several pages. The tool skips these jobs. See [What is planned](#what-is-planned). |
 
 ### Which parts of a form it fills
 
@@ -310,6 +311,77 @@ Stay at your computer while the tool runs. Some forms show a "prove you are
 human" test or email you a code. Only you can do those. Do them in the
 tool's Chrome window, then run `submit` for that job again.
 
+### Codes that a board emails you
+
+After several applications in a short time, Greenhouse asks for proof that
+a person is applying. It emails you an 8-character code and waits. The tool
+does not read that code and does not type it. That step is yours.
+
+The tool makes it quick. Run:
+
+```bash
+npx tsx src/cli.ts codes
+```
+
+It brings each waiting form to the front, one at a time. You type the code
+from your email and click Submit. The tool sees the confirmation, records
+the application and moves to the next form. Each one takes a few seconds.
+
+### Connect a site that needs a sign-in
+
+Some career sites show the form only after you sign in. To use one, sign in
+to it yourself, once:
+
+```bash
+npx tsx src/cli.ts connect <link to the site or to a job on it>
+```
+
+1. The site opens in the tool's Chrome window.
+2. You sign in there. You type your password; the tool does not touch the
+   page and never sees what you type.
+3. The tool notices that you are in, and remembers the site.
+
+Your sign-in stays in the tool's own Chrome profile, apart from your
+everyday browser, until the site ends it. Jobs on that site then go back in
+the queue. `sites` lists the sites you connected, and `disconnect <site>`
+signs the tool out of one.
+
+This works for sites whose form is a single page. If the form runs over
+several pages, the tool fills the first page and stops.
+
+### Track replies from Gmail
+
+The tool can read the replies to your applications and record them: whether
+each company confirmed, declined, asked for an interview or a test, or made
+an offer.
+
+1. Turn on 2-Step Verification for your Google account, then create an app
+   password at https://myaccount.google.com/apppasswords.
+2. Open `.env` and fill in two lines yourself:
+
+   ```
+   GMAIL_ADDRESS=you@gmail.com
+   GMAIL_APP_PASSWORD=the app password
+   ```
+
+3. Run:
+
+   ```bash
+   npx tsx src/cli.ts inbox
+   ```
+
+What you should know before you turn this on:
+
+- **The tool only reads.** It opens your mailbox read-only. It cannot send,
+  move, mark or delete mail.
+- **It opens few messages.** It looks at the sender and the subject of your
+  recent mail. It opens a message only when the subject or the sender names
+  a company you applied to.
+- **It never opens a code message.** It notes that the code arrived, and
+  for which job.
+- **An app password is a real key to your mailbox.** Keep `.env` private.
+  You can delete the app password in your Google account at any time.
+
 ## Find your applications
 
 The applications you sent are in **`applied.csv`**, at the top of the
@@ -333,6 +405,7 @@ npx tsx src/cli.ts log --open
 | `why_fit` | One sentence on why you suit the job |
 | `notes` | The reasons behind the score |
 | `job_id` | The tool's id for the job, which the commands accept |
+| `response`, `response_on` | What the company wrote back and when, if you turned on [Gmail](#track-replies-from-gmail) |
 
 The column names never change, so a script can rely on them. For the same
 rows as JSON, run `npx tsx src/cli.ts log --json`.
@@ -356,8 +429,13 @@ To print it, run `npx tsx src/cli.ts log --all`.
   agree to a contract, the tool leaves it for you.
 - **It will not choose a date for you.** If a form asks you to pick an
   interview or test slot, the tool leaves it for you.
-- **It will not create accounts or type into a sign-in page.**
-- **It will not solve "prove you are human" tests.**
+- **It will not create accounts or type into a sign-in page.** You sign
+  in yourself.
+- **It will not pass a "prove you are human" test for you.** That covers
+  picture puzzles and the codes a board emails you. It never takes a code
+  out of your email.
+- **It will not change your email.** It can read replies if you allow it,
+  and nothing more.
 - **It will not write a cover letter or give references.** It skips jobs
   that require them.
 - **It will not give your GPA** unless the form cannot be sent without it,
@@ -376,6 +454,10 @@ lives in the code.
 - The job text, your facts and the open questions go to Anthropic, through
   your own Claude Code sign-in, when a form has questions for Claude.
 - Your answers go to the employer's job board.
+- If you turn on Gmail: the sender and subject of your recent mail are read
+  on your computer. The text of a message goes to OpenRouter only when the
+  message is about a company you applied to, so that JEV can say what it
+  means. Code messages are never opened.
 - Nothing goes anywhere else. The tool collects no usage data.
 
 One thing to know before you rehearse: some job boards save each answer as
@@ -416,6 +498,9 @@ Run each command as `npx tsx src/cli.ts <command>`.
 | `inspect <id>` | Shows what a filled form holds now, and any errors on the page |
 | `set <id> --values file.json` | Writes answers you chose into a filled form |
 | `submit <ids>` | Sends forms that are ready |
+| `codes` | Shows each form that is waiting for an emailed code, one at a time, and records it once you have sent it |
+| `connect <link>`, `sites`, `disconnect <site>` | Sign in to a job site yourself, list the sites you connected, sign the tool out of one |
+| `inbox [--days N]` | Reads replies to your applications from Gmail and records them |
 | `check <ids>` | Reads what each form's tab shows now, without clicking, and records the job as applied if it is a confirmation. Use it after you finished a form by hand |
 | `log [--all] [--json] [--open]` | Lists your applications |
 | `status` | Shows totals and the reasons jobs were skipped |
@@ -444,45 +529,17 @@ enforces it.
 
 ## What is planned
 
-None of this is built yet. Today the tool only fills forms that need no
-account, and it skips every site that asks you to sign in.
+None of this is built yet.
 
-### Sign in to job sites
-
-Many jobs sit behind a sign-in: LinkedIn, Workday, iCIMS, Taleo, Oracle and
-company career sites with their own accounts. On one search, 903 of the
-4,454 jobs found were on Workday alone. The plan is one command that opens
-a site in the tool's Chrome window so that you can sign in yourself.
-
-- You type your password. The tool never sees it and never types it.
-- The tool keeps each sign-in in its own Chrome profile, apart from your
-  everyday browser, so you sign in to each site once.
-- You can connect as many sites as you like and remove any of them.
-- Once a site is connected, the tool can read its jobs and fill its forms
-  in the same way it does today, with the same checks.
-
-### LinkedIn
-
-With LinkedIn connected, the tool could read your saved searches and job
-alerts as another source of jobs, and fill "Easy Apply" forms. LinkedIn's
-terms limit automated use, so this will be slow, opt-in, and off by
-default.
-
-### Read sign-in emails from Gmail
-
-Some sites email you a code or a link when you sign in or after you apply.
-Today you have to copy that code yourself. The plan is to let the tool read
-it for you, if you allow it.
-
-- It will read only the newest message from the site you are signing in to
-  or have just applied to.
-- It will use the code or the link and nothing else in the message.
-- It will not read, send, move or delete any other email.
-
-### Also planned
-
-- **Forms that run over several pages**, such as Jobvite and
-  SmartRecruiters.
+- **Forms that run over several pages**, such as Tesla, Jobvite and
+  SmartRecruiters. Today the tool fills the first page and stops.
+- **Workday, iCIMS and similar.** On one search, 903 of the 4,454 jobs
+  found were on Workday. Each company there needs its own account, which
+  you would create yourself, and the forms run over several pages. This
+  builds on the sign-in support the tool has now.
+- **LinkedIn.** With LinkedIn connected, the tool could read your saved
+  searches and job alerts as another source of jobs. LinkedIn's terms limit
+  automated use, so this will be slow, opt-in, and off by default.
 - **Windows and Linux.** The tool is tested only on a Mac.
 
 ## Get help or contribute

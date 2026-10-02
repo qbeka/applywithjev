@@ -17,6 +17,7 @@ import { loadMemory, recallExact, recallForm, recallSameFields, recallSimilar, r
 import { contextFingerprint, resolveOpenFields, type OpenField, type Resolution } from "../answers/resolve.js";
 import type { QueueEntry } from "../jobs/queue.js";
 import { closeTab, ensureBrowser, listTargets, newTab, Page, sleep } from "./cdp.js";
+import { hostOf as siteHost, isConnected } from "./sites.js";
 
 const script = (name: string) => readFileSync(path.join(PATHS.browserScripts, name), "utf8");
 const SESSION = path.join(PATHS.runs, "browser-session.json");
@@ -538,8 +539,9 @@ export async function fillJob(jev: JevClient, profile: Profile, job: Job): Promi
       }
     }
     if (d.hasPassword) {
-      // A password box means a login or account page. Nothing is typed into it.
-      return done({ ...base, url: d.url, state: "blocked", reason: "login or account required", fields: [], drafts: [], reviews: [], failed: [], leftBlank: [], missingRequired: [], seconds: (Date.now() - started) / 1000, jevCostUsd: 0 });
+      // A password box means a login or account page. Nothing is typed into it. Signing in is the person's, through `connect`.
+      const reason = isConnected(job.url) || isConnected(d.url) ? `your sign-in to ${siteHost(d.url)} has ended. Sign in again with: connect ${d.url}` : `login or account required. To sign in yourself, run: connect ${d.url}`;
+      return done({ ...base, url: d.url, state: "blocked", reason, fields: [], drafts: [], reviews: [], failed: [], leftBlank: [], missingRequired: [], seconds: (Date.now() - started) / 1000, jevCostUsd: 0 });
     }
     if (!isApplicationForm(d)) {
       const state = await decidePageState(jev, await page.evaluate<string>("window.__awj.pageText()"), d.url, job.id);
@@ -915,6 +917,45 @@ export async function checkJob(jev: JevClient, jobId: string): Promise<{ state: 
   } finally {
     page.close();
   }
+}
+
+/**
+ * Brings a job's tab to the front and watches it while the person finishes the form by hand (a
+ * code to type, a human check). Nothing is typed or clicked. The page is judged only when its
+ * text changes. Returns "submitted" on a confirmation, "gave_up" when `stop` says so or time runs out.
+ */
+export async function watchForConfirmation(jev: JevClient, jobId: string, opts: { timeoutMs: number; stop?: () => boolean }): Promise<"submitted" | "gave_up"> {
+  const page = await pageFor(jobId);
+  try {
+    await page.bringToFront();
+    const deadline = Date.now() + opts.timeoutMs;
+    let last = "";
+    while (Date.now() < deadline && !opts.stop?.()) {
+      await sleep(BROWSER.pollMs * 6);
+      let text: string;
+      try {
+        await install(page);
+        text = await page.evaluate<string>("window.__awj.pageText()");
+      } catch {
+        continue; // mid-navigation
+      }
+      if (text === last) continue;
+      last = text;
+      // The form with its code box still showing is not worth a judgement.
+      if (SECURITY_CODE.test(text)) continue;
+      const state = await decidePageState(jev, text, await page.evaluate<string>("location.href"), jobId);
+      if (state.state === "submitted") return "submitted";
+    }
+    return "gave_up";
+  } finally {
+    page.close();
+  }
+}
+
+/** True when the job still has a tab open in the runner's window. */
+export async function hasOpenTab(jobId: string): Promise<boolean> {
+  const s = loadSession()[jobId];
+  return !!s && ((await listTargets()) ?? []).some((t) => t.id === s.targetId);
 }
 
 export async function closeJobTab(jobId: string): Promise<void> {

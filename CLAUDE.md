@@ -17,8 +17,9 @@ doctor` says what is in place and what to do next.
   `needs_review`, not answered.
 - **No PII in git.** `data/profile.json`, `data/bank.json`,
   `data/voice.local.md`, the resume, `data/applications.csv`, `applied.csv`,
-  `data/memory.json`, `data/queue.json` and everything under `data/cache/`
-  and `data/runs/` are git-ignored. Tests use `data/profile.example.json` only. Never paste real
+  `data/memory.json`, `data/sites.json`, `data/inbox.json`,
+  `data/queue.json` and everything under `data/cache/` and `data/runs/` are
+  git-ignored. Tests use `data/profile.example.json` only. Never paste real
   values into a fixture, a doc, source, or a commit message.
 - **Verify, then submit.** A value is real when it has been read back from
   the page. A form is submitted only when it is `ready`, and an application
@@ -32,7 +33,16 @@ doctor` says what is in place and what to do next.
   it asks for the resume (`fileBoxWants`). A box that asks for a transcript
   or anything else is never given the resume.
 - **Never type into a login.** A page with a password box is blocked. The
-  tool creates no accounts and solves no CAPTCHAs.
+  tool creates no accounts and solves no CAPTCHAs. Signing in is the
+  person's: `connect` opens the site and waits (`src/browser/sites.ts`). No
+  site password is ever stored, read or typed by the tool or by you.
+- **A human check is the person's to pass.** That includes a code a board
+  emails to confirm a person is applying. The tool notes that the message
+  arrived and never opens it; no code is moved from mail to a form, by the
+  tool or by you. `codes` puts the form in front of the person.
+- **Mail is read, never changed.** `src/mail/imap.ts` opens the mailbox with
+  EXAMINE and fetches with PEEK. It has no command that sends, moves, marks
+  or deletes, and none may be added.
 - **No secrets in code or logs.** The OpenRouter key is read from `.env` by
   `src/config.ts` and nowhere else. Error output is redacted in
   `src/jev/client.ts`; keep it that way.
