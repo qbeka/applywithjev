@@ -62,6 +62,15 @@ Keep a Changelog and the project uses Conventional Commits.
   the form's own Next, fill the next page (`nextPage`, up to `RUN.maxPages`).
 - Calendar date pickers are clicked through: open, turn to the month, click
   the day, read the box back (`src/browser/calendar.ts`).
+- Questions that appear only once another is answered are seen: the page is
+  read again after a fill, moved controls keep their answers, and new
+  controls are mapped and filled (`followUp`, `comparePages`).
+- Before Submit the whole page is read afresh, and any required control that
+  shows nothing stops the click.
+- A site that asks for an emailed code is left alone for the rest of that
+  day. Its jobs stay in the queue.
+- A cookie banner that lies over Submit is answered with its most private
+  choice (necessary cookies only, or reject). The tool never accepts all.
 - Site notes (`src/knowledge/sites.ts`, `knowledge` command): after every
   form the tool records how the site's controls took their values, whether
   it wants a sign-in, how many pages its form has and what it could not set,
@@ -134,6 +143,18 @@ Keep a Changelog and the project uses Conventional Commits.
 - The project and its skills run Claude Code on Sonnet 5.5 at high effort.
 
 ### Fixed
+- Several Ashby forms written at once had saves dropped, and a form then
+  went to Submit with answers missing. One Ashby job now goes from fill to
+  submit before the next starts.
+- Ashby's Yes/No rows were found by position, which a new question shifts.
+- select2 dropdowns, and radio rows with long labels, were not read.
+- A question written as plain text above a group of checkboxes (Rippling)
+  was lost, so two "Yes" boxes could not be told apart.
+- A required group of radio buttons whose mark sits on the question was
+  taken as optional.
+- A form too long for one JEV reply is now mapped in smaller pieces.
+- A radio button or checkbox is never set from script when its click does
+  not take: the fill fails and the form is held.
 - Workable forms: Yes/No rows are clicked on their real radio button, a
   required mark before the question is read, and the address parts the site
   fills in itself are left alone.

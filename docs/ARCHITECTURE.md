@@ -76,7 +76,10 @@ Timing on 2026-10-02: 4,748 unique postings, 478 rated, 61 seconds, $0.075.
 ## Apply loop (`src/run/pipeline.ts`)
 
 Each job moves on its own through its steps, and nothing waits for the
-batch. Fills run `RUN.fillConcurrency` at once, paced per site
+batch. One exception: on a board that saves every field to its server
+(`RUN.gentleHosts`, Ashby), one job goes from fill to submit before the next
+starts, because saves are dropped when several of its forms are written at
+once. Fills run `RUN.fillConcurrency` at once, paced per site
 (`src/util/pace.ts`). The moment a fill ends, its form goes to the writer,
 `RUN.writerConcurrency` at once. The moment a form is ready, it is
 submitted: one click at a time, with `RUN.submitGapMs` between two
@@ -91,6 +94,7 @@ fillJob (page 1)
   fillPage ─→ dumpFields.js ─→ readDropdownOptions ─→ mapForm (JEV, cached) ─→ uploads ─→ applyFills
      │                                                  read back, retry what did not stick
      │         secondLook ─→ JEV again, on the closest real options of a dropdown that refused a value
+     │         followUp ─→ read the page again: follow controls that moved, map and fill controls that appeared
      │         readBack ─→ data/runs/<id>.report.json: every field, what the page shows, clean or not
 walk, once per page
   resolveJob ─→ open fields → answer memory, then Claude (headless, no tools) → applyFills → read back
@@ -159,6 +163,18 @@ Three ways, tried in the order the site notes suggest:
 Clicks and keys need the tab in front, so tabs take turns for them
 (`inFront`).
 
+### Questions that appear later
+
+Some questions exist only once another is answered. `followUp` reads the
+page again after a fill (and after Claude's answers are written), up to
+`FORM.followUpRounds` times. `comparePages` tells controls apart by what
+they are (kind, label, name, in order), not by selector: a new question
+pushes the controls below it down, so a selector made of positions may now
+name another control. Controls that moved keep their answers under the new
+selector. Controls that are new are mapped and filled like the rest. Ashby's
+Yes/No rows are found by the name of the input they keep, which does not
+shift.
+
 ### Forms with several pages
 
 `nextPage` runs only when the current page is clean. It clicks the page's
@@ -181,11 +197,14 @@ rehearsal the button is clicked only when JEV agrees that the form goes on.
 4. A form whose values did not land is opened and filled a second time
    (`RUN.fillAttempts`).
 5. A form is `ready` only on its last page, with no draft, review or failure
-   left and no required field empty. `submit` refuses anything else and
-   re-reads the required fields first. An optional field that could not be
-   set and that the page shows empty is not a failure: it is listed as left
-   blank (`splitFailures`).
-6. After the click, JEV reads the page. Only `submitted` is recorded as
+   left and no required field empty. Up to `FORM.maxLeftBlank` optional
+   fields that could not be set and that the page shows empty are not
+   failures: they are listed as left blank (`splitFailures`). More than
+   that holds the form.
+6. `submit` refuses a form that is not ready. Then it reads the whole page
+   afresh, plan or no plan, and any required control that shows nothing
+   stops the click.
+7. After the click, JEV reads the page. Only `submitted` is recorded as
    applied. A page that still shows the form with no error is watched a
    little longer first.
 
@@ -213,8 +232,9 @@ the site wanted a sign-in or emailed a code.
 Before a page is filled, the same notes are read back. `applyFills` types
 straight into a control whose signature is known to need typing, and clicks
 a dropdown known to need clicking, instead of failing the quick way first.
-`learnedWalledHosts` feeds the sign-in sites to discover. The submit pacing
-is longer for a site that has emailed a code.
+`learnedWalledHosts` feeds the sign-in sites to discover. A site that
+emailed a code today (`askingForCodeToday`) is passed over for the rest of
+the day: its jobs stay in the queue.
 
 `loadKnowledge` merges the shipped file (`knowledge/sites.json`) with this
 machine's. `knowledge --share` writes the merged notes into the shipped

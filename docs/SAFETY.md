@@ -43,6 +43,9 @@ profile. The tool makes that the only way.
   anything is submitted. Ashby does. A rehearsal (`--dry`) on such a board
   therefore sends the values to that board as an unsubmitted draft. It is not
   an application and the employer is not notified, but it is not nothing.
+- A cookie banner is touched only when it covers the Submit button, and it
+  is answered with its most private choice (necessary only, or reject).
+  The tool never clicks "accept all".
 - The runner's Chrome profile lives in `data/runs/chrome-profile`, apart
   from your own browser, with no saved logins.
 - JEV usage is appended to `data/runs/jev-usage.jsonl` (ids, token counts,

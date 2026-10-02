@@ -170,9 +170,10 @@ and each cause is now fixed. A rehearsal shows you every answer before
 anything is sent, so read it the first time you use the tool.
 
 A form is "ready" only when every answer is confirmed and no required
-question is empty. The tool will not send any other form. One case does not
-hold a form: an optional question the tool could not answer is left empty,
-and the report says so.
+question is empty. The tool will not send any other form. Just before it
+sends, it reads the whole page once more, and any required question that
+is empty stops it. One case does not hold a form: one or two optional
+questions the tool could not answer are left empty, and the report says so.
 
 ## What the tool handles
 
@@ -218,8 +219,8 @@ date. It ranks the job lower and leaves the choice to you.
 
 | Job board | What to expect |
 |---|---|
-| Greenhouse | Works well. After several applications in a short time, Greenhouse emails you a code to confirm that a person is applying. The tool stops there. See [Codes that a board emails you](#codes-that-a-board-emails-you). |
-| Ashby | Works well. The tool fills these forms one field at a time, because Ashby saves each field as you type. |
+| Greenhouse | Works well, until Greenhouse asks for proof that a person is applying. After several applications in a short time it emails you a code on every form. The tool leaves the first such form open for you and keeps the rest of that day's Greenhouse jobs in the queue. See [Codes that a board emails you](#codes-that-a-board-emails-you). |
+| Ashby | Works well. Ashby saves each field as you type, so the tool fills these forms one field at a time, and one form at a time. |
 | Lever | Works well. |
 | Rippling, Workable, BambooHR | Works. Tested on a few forms each. |
 | Jobvite, Tesla, and other forms that run over several pages | Works. The tool fills a page, checks it, clicks the form's own Next, and fills the next page, up to 8 pages. |
@@ -241,6 +242,11 @@ date. It ranks the job lower and leaves the choice to you.
   to the month, and clicks the day
 - phone numbers with a country picker
 - consent boxes
+- questions that only appear once another is answered: the tool reads the
+  page again after it fills, and answers what has appeared
+- a cookie banner that covers the Submit button: the tool picks the banner's
+  most private choice (necessary cookies only, or reject) and never
+  "accept all"
 
 ### Which questions it answers
 
@@ -342,8 +348,8 @@ It brings each waiting form to the front, one at a time. You type the code
 from your email and click Submit. The tool sees the confirmation, records
 the application and moves to the next form. Each one takes a few seconds.
 
-Once a site has asked for a code, the tool waits longer between two
-applications to that site.
+Once a site has asked for a code, the tool sends it nothing more that day.
+The site's other jobs stay in the queue, and a later run picks them up.
 
 ## Find your applications
 
