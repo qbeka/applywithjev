@@ -12,32 +12,13 @@ import type { QueueEntry } from "../jobs/queue.js";
 import type { Profile } from "../profile/schema.js";
 import { BANK_DRAFTS, BANK_INTENTS } from "./bank.js";
 import { answerContext, jobContext } from "./context.js";
+import { fingerprintOf, Resolution, type OpenField } from "./memory.js";
 
-export type OpenField = {
-  selector: string;
-  kind: string;
-  label: string;
-  /** For a checkbox or a radio option: the question it belongs to. */
-  question: string;
-  hint: string;
-  required: boolean;
-  maxLength: number | null;
-  options: string[];
-  /** Why it is open: a draft, a review, or the reason a value did not land. */
-  why: string;
-};
-
-export const Resolution = z.object({
-  /** ready: every open field is answered or rightly left blank. needs_review: a required field cannot be answered truthfully. skip: the job should not be applied to. */
-  verdict: z.enum(["ready", "needs_review", "skip"]),
-  reason: z.string().default(""),
-  answers: z.array(z.object({ selector: z.string(), value: z.string() })).default([]),
-});
-export type Resolution = z.infer<typeof Resolution>;
+export { Resolution, type OpenField };
 
 const SYSTEM = [
   "You finish job application forms for one candidate. You are given the candidate's facts, the job, what is already filled in, and the fields still open.",
-  "Reply with one JSON object and nothing else: {\"verdict\": \"ready\" | \"needs_review\" | \"skip\", \"reason\": string, \"answers\": [{\"selector\": string, \"value\": string}]}.",
+  "Reply with one JSON object and nothing else: {\"verdict\": \"ready\" | \"needs_review\" | \"skip\", \"reason\": string, \"answers\": [{\"selector\": string, \"value\": string, \"reusable\": boolean}], \"note\": {\"what_they_do\": string, \"why_fit\": string}}.",
   "",
   "Truth comes first.",
   "- Use only the candidate's facts, experience, projects, standing answers and the job posting. Never invent a fact, a number, a skill level, a date or a credential.",
@@ -61,6 +42,10 @@ const SYSTEM = [
   "- A field listed with a reason like \"the page did not keep the value\" needs the value in the format the field wants (for a date box, a real date such as 2027-05-03 or 05/03/2027 as the hint or placeholder shows).",
   "",
   "Answer every open field you can, even when the verdict is needs_review, so a person only has to finish what is left.",
+  "",
+  "Two things that are not part of the form.",
+  "- reusable, on each answer: true only when this exact value is the right answer to the same question on any other company's application form. It is false whenever the question or the value names or depends on this company, this role, its team, its product, its office or location, its pay or its dates, and false when you are not sure.",
+  "- note is for the candidate's own tracking sheet. what_they_do: one plain sentence on what the company builds, from the posting, or empty if the posting does not say. why_fit: one plain sentence tying a concrete fact about the candidate to this role, written as the candidate's own note: start with the fact, and never write \"the candidate\", \"he\" or \"she\". Under 30 words each, no em dashes, no hype words. Leave note out when no job is given.",
 ].join("\n");
 
 /** Everything about the candidate that is the same for every job: the voice guide, the facts and the starting drafts. */
@@ -91,6 +76,9 @@ export function candidateContext(profile: Profile): Record<string, unknown> {
 export function buildSystem(profile: Profile): string {
   return `${SYSTEM}\n\nThe candidate, the same for every form:\n${JSON.stringify(candidateContext(profile), null, 1)}`;
 }
+
+/** Changes whenever anything the writer is told about the candidate changes. Remembered answers are tied to it. */
+export const contextFingerprint = (profile: Profile) => fingerprintOf(buildSystem(profile));
 
 /** The part that changes per form: the job, what is already filled, and the open fields. */
 export function buildPrompt(entry: QueueEntry | null, filled: { label: string; value: string }[], open: OpenField[]): string {
@@ -167,12 +155,29 @@ function recordWriterCall(envelope: Envelope, meta: { purpose: WriterCall["purpo
   }
 }
 
-function runWriter(prompt: string, system: string, meta: { purpose: WriterCall["purpose"]; jobId: string }): Promise<string> {
+/**
+ * The first call of a process stores the system prompt in the provider's cache. Calls that start
+ * while it is still running would each pay to store it again, so they wait for it and then read it.
+ */
+let warming: Promise<unknown> | null = null;
+async function runWriter(prompt: string, system: string, meta: { purpose: WriterCall["purpose"]; jobId: string }): Promise<string> {
+  if (meta.purpose !== "resolve") return callWriter(prompt, system, meta);
+  if (warming) {
+    await warming;
+    return callWriter(prompt, system, meta);
+  }
+  const first = callWriter(prompt, system, meta);
+  warming = first.catch(() => undefined);
+  return first;
+}
+
+function callWriter(prompt: string, system: string, meta: { purpose: WriterCall["purpose"]; jobId: string }): Promise<string> {
   return new Promise((resolve, reject) => {
+    mkdirSync(WRITER.cwd, { recursive: true });
     const child = spawn(
       WRITER.command,
       ["-p", "--model", WRITER.model, "--effort", WRITER.effort, "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config", "--system-prompt", system],
-      { stdio: ["pipe", "pipe", "pipe"] },
+      { stdio: ["pipe", "pipe", "pipe"], cwd: WRITER.cwd, env: { ...process.env, ...WRITER.env } },
     );
     let out = "";
     let err = "";

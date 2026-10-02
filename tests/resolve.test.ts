@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildPrompt, buildSystem, candidateContext, parseResolution, type OpenField } from "../src/answers/resolve.js";
+import { buildPrompt, buildSystem, candidateContext, contextFingerprint, parseResolution, type OpenField } from "../src/answers/resolve.js";
 import { ProfileSchema } from "../src/profile/schema.js";
 
 const profile = ProfileSchema.parse(JSON.parse(readFileSync(new URL("../data/profile.example.json", import.meta.url), "utf8")));
@@ -9,8 +9,13 @@ const open: OpenField[] = [{ selector: "#q1", kind: "textarea", label: "Why Acme
 describe("parseResolution", () => {
   it("reads a bare object and one wrapped in a code fence", () => {
     const body = '{"verdict":"ready","reason":"","answers":[{"selector":"#q1","value":"Because."}]}';
-    expect(parseResolution(body).answers[0]).toEqual({ selector: "#q1", value: "Because." });
+    expect(parseResolution(body).answers[0]).toEqual({ selector: "#q1", value: "Because.", reusable: false });
     expect(parseResolution("```json\n" + body + "\n```").verdict).toBe("ready");
+  });
+  it("reads whether an answer holds for any company, and the note for the tracking sheet", () => {
+    const r = parseResolution('{"verdict":"ready","answers":[{"selector":"#q1","value":"Yes","reusable":true}],"note":{"what_they_do":"Builds rockets.","why_fit":"Shipped six features."}}');
+    expect(r.answers[0]?.reusable).toBe(true);
+    expect(r.note).toEqual({ what_they_do: "Builds rockets.", why_fit: "Shipped six features." });
   });
   it("defaults the optional parts and rejects anything that is not a verdict", () => {
     expect(parseResolution('{"verdict":"skip"}')).toEqual({ verdict: "skip", reason: "", answers: [] });
@@ -31,6 +36,11 @@ describe("the writer's prompt", () => {
     expect(system).toContain("Truth comes first.");
     expect(system).toContain(profile.facts[0] as string);
     expect(buildSystem(profile)).toBe(system);
+  });
+  it("asks the writer to mark what is reusable, and ties remembered answers to the candidate's context", () => {
+    expect(system).toContain("reusable, on each answer: true only when");
+    expect(contextFingerprint(profile)).toBe(contextFingerprint(profile));
+    expect(contextFingerprint({ ...profile, facts: [...profile.facts, "A new fact."] })).not.toBe(contextFingerprint(profile));
   });
   it("keeps what changes per form in the prompt: the job, what is filled, what is open", () => {
     expect(Object.keys(prompt)).toEqual(["job", "already_filled", "open_fields"]);

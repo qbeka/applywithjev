@@ -6,14 +6,15 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { BROWSER, FORM, PATHS } from "../config.js";
+import { BROWSER, FORM, MEMORY, PATHS } from "../config.js";
 import { FieldsDump, isApplicationForm, type DumpedField, type FillPlan } from "../forms/fields.js";
 import { hasChoosableOptions, mapForm } from "../forms/mapForm.js";
 import { decidePageState, type PageState } from "../forms/pageState.js";
 import type { JevClient } from "../jev/client.js";
 import { applyUrlFor, greenhouseFallbackUrl, type Job } from "../jobs/normalize.js";
 import type { Profile } from "../profile/schema.js";
-import { resolveOpenFields, type OpenField, type Resolution } from "../answers/resolve.js";
+import { loadMemory, recallExact, recallForm, recallSameFields, recallSimilar, remember, saveMemory, type Recalled } from "../answers/memory.js";
+import { contextFingerprint, resolveOpenFields, type OpenField, type Resolution } from "../answers/resolve.js";
 import type { QueueEntry } from "../jobs/queue.js";
 import { closeTab, ensureBrowser, listTargets, newTab, Page, sleep } from "./cdp.js";
 
@@ -44,6 +45,9 @@ export type FillReport = {
   ready: boolean;
   /** What Claude decided about the fields JEV left open, once resolve has run. */
   resolution?: Resolution;
+  /** How many of those answers came from the answer memory, and whether Claude had to be asked at all. */
+  recalled?: number;
+  writerCalled?: boolean;
   seconds: number;
   jevCostUsd: number;
 };
@@ -635,7 +639,7 @@ async function report(page: Page, d: FieldsDump, plan: FillPlan, failedRaw: { se
  * Hands every field still open on a filled form to Claude, writes its answers into the page,
  * reads them back, and records whether the form is now ready to submit.
  */
-export async function resolveJob(profile: Profile, entry: QueueEntry | null, jobId: string): Promise<FillReport> {
+export async function resolveJob(profile: Profile, entry: QueueEntry | null, jobId: string, opts: { jev?: JevClient; fresh?: boolean } = {}): Promise<FillReport> {
   const r = loadReport(jobId);
   if (r.state !== "filled" || r.ready) return r;
   const { dump: d, plan } = JSON.parse(readFileSync(planFile(jobId), "utf8")) as { dump: FieldsDump; plan: FillPlan };
@@ -665,7 +669,37 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
       return f && (f.kind === "checkbox" || f.kind === "radio") && f.section && f.section !== label ? `${f.section} / ${label}` : label;
     };
     const filled = plan.fields.map((f, i) => ({ label: withQuestion(f.selector, f.label), value: before[i] ?? "" })).filter((f) => f.value && f.label);
-    const resolution = await resolveOpenFields(profile, entry, filled, [...open.values()]);
+    const openFields = [...open.values()];
+    const company = entry?.job.company ?? r.company;
+    const fingerprint = contextFingerprint(profile);
+    const useMemory = MEMORY.enabled && !opts.fresh;
+    const mem = useMemory ? loadMemory() : null;
+    // The same form with the same open fields was resolved before: what was read then is what goes in now.
+    const sameForm = mem ? recallForm(mem, jobId, fingerprint, openFields) : null;
+    let recalled = new Map<string, Recalled>();
+    let resolution: Resolution;
+    if (sameForm) {
+      resolution = sameForm;
+      recalled = new Map(sameForm.answers.map((a) => [a.selector, { value: a.value, reusable: a.reusable, source: "same form", from: company }]));
+    } else {
+      if (mem) {
+        recalled = recallSameFields(mem, jobId, fingerprint, openFields);
+        for (const [selector, hit] of recallExact(mem, fingerprint, company, openFields.filter((f) => !recalled.has(f.selector)))) recalled.set(selector, hit);
+        const rest = openFields.filter((f) => !recalled.has(f.selector));
+        if (opts.jev && rest.length) {
+          // A question worded another way: JEV says whether it is the same question. If it cannot be asked, Claude answers as before.
+          const similar = await recallSimilar(opts.jev, mem, fingerprint, company, rest, `same-question:${jobId}`).catch(() => new Map<string, Recalled>());
+          for (const [selector, hit] of similar) recalled.set(selector, hit);
+        }
+      }
+      const rest = openFields.filter((f) => !recalled.has(f.selector));
+      const settled = openFields.filter((f) => recalled.has(f.selector) && f.kind !== "checkbox").map((f) => ({ label: withQuestion(f.selector, f.label), value: recalled.get(f.selector)?.value ?? "" }));
+      const fresh = await resolveOpenFields(profile, entry, [...filled, ...settled], rest);
+      resolution = { ...fresh, answers: [...[...recalled].map(([selector, hit]) => ({ selector, value: hit.value, reusable: hit.reusable })), ...fresh.answers] };
+      // The sheet note written for this posting last time is kept when Claude is not asked again.
+      const prior = mem?.forms[jobId];
+      if (!resolution.note && prior?.fingerprint === fingerprint && prior.resolution.note) resolution.note = prior.resolution.note;
+    }
     const fills = resolution.answers
       .map((a) => ({ selector: a.selector, kind: open.get(a.selector)?.kind ?? "text", value: a.value }))
       .filter((f) => !(f.kind === "checkbox" && !/^(true|yes|1|on|checked)$/i.test(f.value)));
@@ -678,8 +712,12 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
     const fields = plan.fields.map((f, i) => {
       const was = r.fields[i];
       const shown = was?.action === "upload" && was.shown ? was.shown : after[i] ?? "";
-      return { label: f.label, required: f.required, action: answered.has(f.selector) ? "claude" : f.action, shown, note: f.note };
+      return { label: f.label, required: f.required, action: recalled.has(f.selector) ? "memory" : answered.has(f.selector) ? "claude" : f.action, shown, note: f.note };
     });
+    if (mem && !sameForm) {
+      const landed = (selector: string) => !!after[plan.fields.findIndex((f) => f.selector === selector)];
+      saveMemory(remember(loadMemory(), { jobId, company, fingerprint, open: openFields, resolution, landed, recalled: new Set(recalled.keys()) }));
+    }
     const next: Omit<FillReport, "ready"> = {
       ...r,
       fields,
@@ -693,6 +731,8 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
       ].map((f) => ({ ...f, label: labelOf(f.selector) })),
       missingRequired: emptyRequired(d, plan, fields.map((f) => f.shown), states),
       resolution,
+      recalled: recalled.size,
+      writerCalled: !sameForm && openFields.some((f) => !recalled.has(f.selector)),
     };
     return saveReport({ ...next, ready: resolution.verdict === "ready" && isReady(next) });
   } finally {

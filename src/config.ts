@@ -3,6 +3,7 @@
  * Nothing else in the codebase hardcodes a number that changes behaviour.
  */
 import { existsSync, readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,7 +19,12 @@ export const PATHS = {
   bank: path.join(ROOT, "data", "bank.json"),
   bankExample: path.join(ROOT, "data", "bank.example.json"),
   queue: path.join(ROOT, "data", "queue.json"),
+  /** Every job the tool considered, with what happened to it. */
   applications: path.join(ROOT, "data", "applications.csv"),
+  /** Only the applications that were sent, newest first. It sits at the top of the folder so it is easy to find. */
+  applied: path.join(ROOT, "applied.csv"),
+  /** Answers the writer has given before, kept so the same question is not paid for twice. */
+  memory: path.join(ROOT, "data", "memory.json"),
   cache: path.join(ROOT, "data", "cache"),
   walledHosts: path.join(ROOT, "data", "cache", "walled-hosts.json"),
   runs: path.join(ROOT, "data", "runs"),
@@ -178,6 +184,39 @@ export const WRITER = {
   maxDescriptionChars: 4_000,
   /** Posting characters per job when writing the two sheet notes, where the opening paragraph is enough. */
   maxNoteChars: 1_500,
+  /**
+   * Where the headless call runs. Claude Code adds the CLAUDE.md of the folder it starts in to every
+   * prompt, and this project's CLAUDE.md is about changing the code, not about writing answers.
+   * An empty folder outside the project keeps those 1,300 tokens out of every call.
+   */
+  cwd: path.join(os.tmpdir(), "applywithjev-writer"),
+  /**
+   * The candidate's context is cached by the provider. A run reads it again within seconds, so the
+   * five-minute cache is enough, and writing to it costs 1.25 times the input price where the
+   * one-hour cache costs 2 times.
+   */
+  env: { FORCE_PROMPT_CACHING_5M: "1" },
+} as const;
+
+/** The answer memory: what the writer already answered, reused instead of asked again. */
+export const MEMORY = {
+  enabled: true,
+  /** JEV's confidence that a new question asks for the same thing as a remembered one, at or above which the remembered answer is used. */
+  sameQuestionConfidence: 0.9,
+  /** Remembered questions shown to JEV per open field, closest wording first. */
+  candidates: 5,
+  /** Share of the shorter question's words the two must have in common before JEV is asked at all. */
+  minWordOverlap: 0.3,
+} as const;
+
+/** What `doctor` checks against. */
+export const DOCTOR = {
+  minNodeMajor: 22,
+  /** Most job boards refuse a larger resume. */
+  maxResumeBytes: 5_000_000,
+  /** A queue older than this is worth refreshing before a run: postings close. */
+  staleQueueHours: 24,
+  claudeTimeoutMs: 60_000,
 } as const;
 
 export const RUN = {
