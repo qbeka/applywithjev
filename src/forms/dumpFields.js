@@ -91,7 +91,7 @@
     return questionFor(el).replace(/\s*[*✱]\s*$/, "").slice(0, LABEL_MAX) || ownName(el) || label;
   };
   // A file box is usually labelled by its button ("Attach", "Choose file"). Which file it wants is said by the question above it.
-  const FILE_BUTTON = /^(attach|upload|upload file|choose file|select file|browse|replace file|drop or select|drag and drop|svgs? not supported)/i;
+  const FILE_BUTTON = /^(attach|upload|upload file|choose file|select file|browse|replace file|drop or select|drag and drop|svgs? not supported|file[-_ ]?input|file$|no file (selected|chosen))/i;
   // The question above a file box, skipping the box's own buttons ("Attach", "Dropbox", "Enter manually").
   const fileQuestion = (el) => {
     let cur = el;

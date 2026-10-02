@@ -346,6 +346,9 @@ everyday browser, until the site ends it. Jobs on that site then go back in
 the queue. `sites` lists the sites you connected, and `disconnect <site>`
 signs the tool out of one.
 
+To go through every site that has jobs waiting on a sign-in, one after
+another, run `npx tsx src/cli.ts connect --all`. Press Enter to skip a site.
+
 This works for sites whose form is a single page. If the form runs over
 several pages, the tool fills the first page and stops.
 

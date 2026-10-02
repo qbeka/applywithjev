@@ -166,6 +166,8 @@ export const BROWSER = {
   optionsMs: 4_000,
   /** A page that answered with an error is reopened once after this pause. */
   retryAfterMs: 8_000,
+  /** Waits before a typed value the page did not keep is put back: once soon, once later. */
+  putBackAfterMs: [1_500, 5_000],
   /** Longest wait for a form to finish saving one field to its own server before the next field is set. */
   saveMs: 3_000,
   /** Longest wait for an uploaded resume to reach the form's server. */
@@ -275,6 +277,8 @@ export const RUN = {
   codeWaitMs: 240_000,
   /** The pause between two submissions to the same site. A burst of applications from one person looks like a robot, and boards answer it with a human check. */
   submitGapMs: 20_000,
+  /** How many times a form is opened and filled when values did not land. A page that loaded badly (a script of its own missing) is often fine on a second load. */
+  fillAttempts: 2,
   /** Longest one form may take to open and fill. A page that never settles is recorded as blocked instead of holding up the run. */
   fillTimeoutMs: 180_000,
   /** Forms handed to the writer at once. */

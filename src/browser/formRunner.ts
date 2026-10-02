@@ -564,12 +564,18 @@ export async function fillJob(jev: JevClient, profile: Profile, job: Job): Promi
     let failedRaw = await applyFills(page, plan.fills, profile);
     trace(`${job.company}: filled ${Date.now() - started}ms`);
     // A page that finishes starting up after the fill can wipe what was typed. Give it a moment, then put those values back once.
-    const wiped = plan.fills.filter((f) => TYPED_KINDS.has(f.kind) && failedRaw.some((x) => x.selector === f.selector));
-    if (wiped.length) {
-      await sleep(BROWSER.pollMs * 10);
+    // A page that finishes starting up after the fill can wipe what was typed, and a phone box throws a number away
+    // until its own checker has loaded. Such values are put back after a short wait, then once more after a longer one.
+    for (const [round, wait] of BROWSER.putBackAfterMs.entries()) {
+      const wiped = plan.fills
+        .filter((f) => TYPED_KINDS.has(f.kind) && failedRaw.some((x) => x.selector === f.selector))
+        // A phone box that refused the bare number twice is given it with the country code: some only accept a number they can place in a country.
+        .map((f) => (round > 0 && f.kind === "tel" && f.value === profile.phone.national ? { ...f, value: `${profile.phone.countryCode}${profile.phone.national}` } : f));
+      if (!wiped.length) break;
+      await sleep(wait);
       const still = await applyFills(page, wiped, profile);
       failedRaw = [...failedRaw.filter((x) => !wiped.some((f) => f.selector === x.selector)), ...still];
-      trace(`${job.company}: put back ${wiped.length - still.length} of ${wiped.length} wiped value(s)`);
+      trace(`${job.company}: put back ${wiped.length - still.length} of ${wiped.length} wiped value(s) after ${wait}ms`);
     }
     failedRaw = [...(await secondLook(page, jev, profile, job, d, plan, failedRaw)), ...uploadFailures];
     writeFileSync(planFile(job.id), JSON.stringify({ dump: d, plan }, null, 2));

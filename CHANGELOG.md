@@ -70,6 +70,11 @@ Keep a Changelog and the project uses Conventional Commits.
 - `codes`: for forms waiting on a code a board emailed you, shows each form
   in turn while you type the code, then records the application. The tool
   never opens a code message.
+- `connect --all` goes through every site whose jobs are waiting on a
+  sign-in, one at a time. Enter skips a site.
+- A form whose values did not land is opened and filled a second time
+  (`RUN.fillAttempts`). A phone number the page refused is tried again with
+  its country code.
 - `apply` sends each form as soon as it is ready. Every job moves on its own
   through fill, resolve and submit, and its result is printed and recorded
   when it happens, so a run that is cut short has sent what was done.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addSite, hostOf, isConnected, signInState, type Seen } from "../src/browser/sites.js";
+import { addSite, hostOf, isConnected, signInState, sitesNeedingSignIn, type Seen } from "../src/browser/sites.js";
 import { isWalled } from "../src/jobs/walled.js";
 
 const looks = (...boxes: boolean[]): Seen[] => boxes.map((hasPassword, i) => ({ at: i * 1000, hasPassword }));
@@ -34,5 +34,21 @@ describe("connected sites", () => {
     expect(isWalled("https://jobs.ea.com/en_US/careers/1", [], ["jobs.ea.com"])).toBe(false);
     expect(isWalled("https://careers.example.com/1", ["careers.example.com"], [])).toBe(true);
     expect(isWalled("https://careers.example.com/1", ["careers.example.com"], ["careers.example.com"])).toBe(false);
+  });
+  it("lists the sites whose jobs wait on a sign-in, most jobs first, without the connected ones", () => {
+    const e = (url: string, company: string, status: string, statusReason: string | null) => ({ status, statusReason, job: { url, company } });
+    const entries = [
+      e("https://a.example.com/job/1", "Alpha", "skipped", "careers site needs an account"),
+      e("https://b.example.com/job/1", "Beta", "skipped", "careers site needs an account"),
+      e("https://b.example.com/job/2", "Beta", "blocked", "login or account required. To sign in yourself, run: connect https://b.example.com/login"),
+      e("https://c.example.com/job/1", "Gamma", "skipped", "workday (needs an account per company)"),
+      e("https://d.example.com/job/1", "Delta", "applied", null),
+      e("https://e.example.com/job/1", "Epsilon", "skipped", "careers site needs an account"),
+    ];
+    const connected = [{ host: "e.example.com", url: "https://e.example.com", connectedAt: "", checkedAt: "" }];
+    expect(sitesNeedingSignIn(entries, connected)).toEqual([
+      { host: "b.example.com", url: "https://b.example.com/job/1", companies: ["Beta"], jobs: 2 },
+      { host: "a.example.com", url: "https://a.example.com/job/1", companies: ["Alpha"], jobs: 1 },
+    ]);
   });
 });

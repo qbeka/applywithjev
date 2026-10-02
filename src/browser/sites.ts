@@ -53,6 +53,26 @@ export function addSite(sites: Site[], url: string, now = new Date().toISOString
   return [...sites.filter((s) => s.host !== host), { host, url, connectedAt: before?.connectedAt ?? now, checkedAt: now }].sort((a, b) => a.host.localeCompare(b.host));
 }
 
+/** A job as far as this file needs it. */
+type Listed = { status: string; statusReason: string | null; job: { url: string; company: string } };
+
+/** True for a job that was skipped or blocked only because its site wants a sign-in. */
+export const needsSignIn = (e: Listed) => (e.status === "skipped" || e.status === "blocked") && /careers site needs an account|login or account required|login_required|sign-in to .* has ended/i.test(e.statusReason ?? "");
+
+/** The sites whose jobs are waiting on a sign-in, the ones with most jobs first, with a link to open on each. Sites already connected are left out. */
+export function sitesNeedingSignIn(entries: Listed[], sites: Site[] = loadSites()): { host: string; url: string; companies: string[]; jobs: number }[] {
+  const byHost = new Map<string, { host: string; url: string; companies: Set<string>; jobs: number }>();
+  for (const e of entries) {
+    const host = hostOf(e.job.url);
+    if (!host || !needsSignIn(e) || sites.some((s) => s.host === host)) continue;
+    const at = byHost.get(host) ?? { host, url: e.job.url, companies: new Set<string>(), jobs: 0 };
+    at.companies.add(e.job.company);
+    at.jobs++;
+    byHost.set(host, at);
+  }
+  return [...byHost.values()].sort((a, b) => b.jobs - a.jobs || a.host.localeCompare(b.host)).map((s) => ({ ...s, companies: [...s.companies] }));
+}
+
 /** One look at the page while the person signs in. */
 export type Seen = { at: number; hasPassword: boolean };
 
@@ -75,7 +95,7 @@ const HAS_PASSWORD = "[...document.querySelectorAll('input[type=password]')].som
  * Opens the site and waits for the person to sign in. Nothing is typed or clicked by the tool.
  * Returns what happened; the caller records the site when it is "signed_in".
  */
-export async function waitForSignIn(url: string, opts: { timeoutMs?: number; onTick?: (state: ReturnType<typeof signInState>, secondsLeft: number) => void } = {}): Promise<ReturnType<typeof signInState>> {
+export async function waitForSignIn(url: string, opts: { timeoutMs?: number; stop?: () => boolean; onTick?: (state: ReturnType<typeof signInState>, secondsLeft: number) => void } = {}): Promise<ReturnType<typeof signInState>> {
   await ensureBrowser();
   const target = await newTab(url);
   const page = await Page.attach(target);
@@ -84,7 +104,7 @@ export async function waitForSignIn(url: string, opts: { timeoutMs?: number; onT
   try {
     await page.bringToFront();
     let state: ReturnType<typeof signInState> = "no_sign_in_seen";
-    while (Date.now() < deadline) {
+    while (Date.now() < deadline && !opts.stop?.()) {
       await sleep(SITES.pollMs);
       try {
         seen.push({ at: Date.now(), hasPassword: await page.evaluate<boolean>(HAS_PASSWORD) });

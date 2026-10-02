@@ -21,7 +21,7 @@ import { decidePageState } from "./forms/pageState.js";
 import { FieldsDump } from "./forms/fields.js";
 import { ensureBrowser } from "./browser/cdp.js";
 import { checkJob, closeJobTab, fillJob, hasOpenTab, inspect, loadReport, resolveJob, setValues, submitJob, watchForConfirmation, type Fill, type FillReport } from "./browser/formRunner.js";
-import { addSite, forgetSite, hostOf as siteHost, loadSites, saveSites, waitForSignIn } from "./browser/sites.js";
+import { addSite, forgetSite, hostOf as siteHost, loadSites, needsSignIn, saveSites, sitesNeedingSignIn, waitForSignIn } from "./browser/sites.js";
 import { Mailbox } from "./mail/imap.js";
 import { codeArrived, latestReply, loadInbox, REPLY_LABEL, saveInbox, sortMail, type AppliedJob } from "./mail/inbox.js";
 import { hostIs, type Job } from "./jobs/normalize.js";
@@ -171,8 +171,20 @@ function takeJobs(ids: string[], o: RunOptions): QueueEntry[] {
 
 const blockedReport = (e: QueueEntry, reason: string): FillReport => ({ jobId: e.job.id, company: e.job.company, title: e.job.title, ats: e.job.ats, url: e.job.url, state: "blocked", reason, fields: [], drafts: [], reviews: [], failed: [], leftBlank: [], missingRequired: [], ready: false, seconds: 0, jevCostUsd: 0 });
 
-/** Fills one form, within RUN.fillTimeoutMs. A form that cannot be opened, or never settles, comes back as blocked. */
+/** Fills one form. When values did not land, the form is opened and filled once more, and the better of the two results is kept. */
 async function fillOne(jev: JevClient, profile: Profile, e: QueueEntry): Promise<FillReport> {
+  let best = await fillOnce(jev, profile, e);
+  for (let attempt = 1; attempt < RUN.fillAttempts && best.state === "filled" && best.failed.length > 0; attempt++) {
+    const again = await fillOnce(jev, profile, e);
+    // The tab now holds the second fill, so its report is the one that describes the page, unless it could not be opened at all.
+    if (again.state !== "filled") break;
+    best = again;
+  }
+  return best;
+}
+
+/** One go at a form, within RUN.fillTimeoutMs. A form that cannot be opened, or never settles, comes back as blocked. */
+async function fillOnce(jev: JevClient, profile: Profile, e: QueueEntry): Promise<FillReport> {
   let timer: NodeJS.Timeout | undefined;
   try {
     const tooLong = new Promise<never>((_, reject) => {
@@ -465,48 +477,79 @@ program
     console.log(`${sent.length} of ${ids.length} recorded as applied`);
   });
 
+/** Records a site as connected, takes it off the walled list, and puts its blocked jobs back in the queue. Returns how many. */
+function recordConnected(address: string): number {
+  const host = siteHost(address);
+  saveSites(addSite(loadSites(), address));
+  forgetWalledHost(address);
+  const q = loadQueue();
+  let rows = loadRows();
+  let back = 0;
+  for (const e of q.entries) {
+    if (e.status !== "blocked" || siteHost(e.job.url) !== host || !needsSignIn(e)) continue;
+    rows = upsertEntry(rows, updateEntry(q, e.job.id, { status: "queued", statusReason: null }));
+    back++;
+  }
+  saveQueue(q);
+  saveRows(rows);
+  return back;
+}
+
+/** Opens one site and waits for the person to sign in. `stop` lets them skip it. */
+async function signInTo(address: string, stop?: () => boolean): Promise<"signed_in" | "skipped" | "not_finished" | "no_sign_in_seen"> {
+  let said = "";
+  const state = await waitForSignIn(address, {
+    ...(stop ? { stop } : {}),
+    onTick: (s, left) => {
+      const line = s === "waiting" ? "  Waiting for you to finish signing in." : s === "no_sign_in_seen" ? "  Waiting for the sign-in page. Open it in that window if the site has not shown it." : "";
+      if (line && line !== said) console.log(`${line} (${Math.max(1, Math.round(left / 60))} min left)`);
+      said = line || said;
+    },
+  });
+  if (stop?.()) return "skipped";
+  return state === "signed_in" ? "signed_in" : state === "no_sign_in_seen" ? "no_sign_in_seen" : "not_finished";
+}
+
 program
-  .command("connect <url>")
+  .command("connect [url]")
   .description("Sign in to a job site yourself, in the tool's Chrome window. The tool waits, types nothing, and remembers the site once you are in")
   .option("--already", "you are signed in there already: just record the site")
-  .action(async (url: string, o: { already?: boolean }) => {
+  .option("--all", "go through every site whose jobs are waiting on a sign-in, one at a time")
+  .action(async (url: string | undefined, o: { already?: boolean; all?: boolean }) => {
+    if (o.all || !url) {
+      const todo = sitesNeedingSignIn(loadQueue().entries);
+      if (!todo.length) return console.log("No job is waiting on a sign-in.");
+      console.log(`${todo.length} site(s) have jobs that need a sign-in. Each opens in the tool's Chrome window. Sign in there yourself; the tool does not touch the page.`);
+      let skip = false;
+      if (process.stdin.isTTY) process.stdin.on("data", () => (skip = true));
+      let connected = 0;
+      for (const [i, site] of todo.entries()) {
+        console.log(`\n${i + 1} of ${todo.length}: ${site.host} (${site.companies.join(", ")}, ${site.jobs} job${site.jobs === 1 ? "" : "s"})${process.stdin.isTTY ? ". Press Enter to skip this site." : ""}`);
+        skip = false;
+        const result = await signInTo(site.url, () => skip);
+        if (result === "signed_in") {
+          const back = recordConnected(site.url);
+          connected++;
+          console.log(`  Connected.${back ? ` ${back} job(s) are back in the queue.` : ""}`);
+        } else console.log(result === "skipped" ? "  Skipped." : result === "no_sign_in_seen" ? `  No sign-in page was shown. If you are signed in there, run: connect ${site.host} --already` : "  Not finished in time.");
+      }
+      if (process.stdin.isTTY) process.stdin.pause();
+      console.log(`\n${connected} of ${todo.length} connected.${connected ? " Run discover to pick up the jobs on them." : ""}`);
+      return;
+    }
     const host = siteHost(url);
     if (!host) throw new Error(`Not a web address: ${url}`);
     const address = url.includes("://") ? url : `https://${url}`;
     if (!o.already) {
       console.log(`Opening ${host} in the tool's Chrome window. Sign in there. Type your password yourself; the tool does not touch the page.`);
-      let said = "";
-      const state = await waitForSignIn(address, {
-        onTick: (s, left) => {
-          const line = s === "waiting" ? "Waiting for you to finish signing in." : s === "no_sign_in_seen" ? "Waiting for the sign-in page. Open it if the site has not shown it." : "";
-          if (line && line !== said) console.log(`${line} (${Math.round(left / 60)} min left)`);
-          said = line || said;
-        },
-      });
-      if (state === "no_sign_in_seen") {
-        console.log(`No sign-in page was shown on ${host}. If you are signed in there already, run: connect ${url} --already`);
-        process.exitCode = 1;
-        return;
-      }
-      if (state !== "signed_in") {
-        console.log(`The sign-in to ${host} was not finished in time. Run connect again when you are ready.`);
+      const result = await signInTo(address);
+      if (result !== "signed_in") {
+        console.log(result === "no_sign_in_seen" ? `No sign-in page was shown on ${host}. If you are signed in there already, run: connect ${url} --already` : `The sign-in to ${host} was not finished in time. Run connect again when you are ready.`);
         process.exitCode = 1;
         return;
       }
     }
-    saveSites(addSite(loadSites(), address));
-    forgetWalledHost(address);
-    // Jobs this site blocked for want of a sign-in go back in the queue.
-    const q = loadQueue();
-    let rows = loadRows();
-    let back = 0;
-    for (const e of q.entries) {
-      if (e.status !== "blocked" || siteHost(e.job.url) !== host || !/login|account|sign-in|needs an account/i.test(e.statusReason ?? "")) continue;
-      rows = upsertEntry(rows, updateEntry(q, e.job.id, { status: "queued", statusReason: null }));
-      back++;
-    }
-    saveQueue(q);
-    saveRows(rows);
+    const back = recordConnected(address);
     console.log(`${host} is connected.${back ? ` ${back} job(s) there are back in the queue.` : ""} The next discover will keep jobs from this site.`);
   });
 
