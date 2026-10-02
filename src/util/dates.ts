@@ -53,3 +53,46 @@ export function showsDate(shown: string, d: Ymd): boolean {
   const word = shown.split(/[^A-Za-z]+/).some((w) => w.length >= 3 && monthIndex(w) === d.month - 1);
   return numbers.includes(d.year) && numbers.includes(d.day) && (word || numbers.filter((n) => n === d.month).length >= (d.month === d.day ? 2 : 1));
 }
+
+/** The date format a box asks for in its placeholder or hint ("MM/DD/YYYY", "dd-mm-yyyy", "YYYY-MM-DD"), or null when it names none. */
+export function dateFormatOf(text: string): string | null {
+  const m = /\b(mm|dd|yyyy)([\/.-])(mm|dd|yyyy)\2(mm|dd|yyyy)\b/i.exec(text);
+  if (!m) return null;
+  const parts = [m[1], m[3], m[4]].map((p) => (p as string).toLowerCase());
+  return new Set(parts).size === 3 ? parts.join(m[2] as string) : null;
+}
+
+/** A date written the way a box asks for it: May 2027 in an MM/DD/YYYY box is 05/01/2027. A value that is not a date, or a box that names no format, is left as it is. */
+export function shapedForBox(value: string, boxText: string): string {
+  const d = toYmd(value);
+  const format = dateFormatOf(boxText);
+  if (!d || !format) return value;
+  return format.replace(/yyyy/, String(d.year)).replace(/mm/, String(d.month).padStart(2, "0")).replace(/dd/, String(d.day).padStart(2, "0"));
+}
+
+/**
+ * True when what a box shows is the value that was meant. Sites reshape what they are given: a phone
+ * gains brackets, a link gains its scheme, a date is written in the box's own format, and a long
+ * answer loses its double spaces. What they must not do is show something else.
+ */
+export function showsValue(want: string, shown: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const w = norm(want);
+  const s = norm(shown);
+  if (!s) return false;
+  if (w === s) return true;
+  // One inside the other: a city shown with its region, a link shown without its scheme. A bare number is not loose like that.
+  if ((/[a-z]/.test(w) || w.length >= 4) && (s.includes(w) || w.includes(s))) return true;
+  // Numbers: the same digits, or a phone shown with the country code the box added in front.
+  const digits = (x: string) => x.replace(/\D/g, "");
+  const dw = digits(w);
+  const ds = digits(s);
+  if (dw && ds && (dw === ds || (Math.min(dw.length, ds.length) >= 7 && (dw.endsWith(ds) || ds.endsWith(dw))))) return true;
+  const d = toYmd(want);
+  if (d && showsDate(shown, d)) return true;
+  // A place picked from a list comes back in the list's own spelling: "Edmonton, Alberta, Canada" shows as "Edmonton, AB, CAN".
+  const place = (x: string) => x.split(",")[0]?.trim() ?? "";
+  if (w.includes(",") && s.includes(",") && place(w).length >= 3 && place(w) === place(s)) return true;
+  const bare = (x: string) => x.replace(/^https?:\/\/(www\.)?/, "").replace(/\/+$/, "");
+  return bare(w) === bare(s);
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isoOf, monthOfHeading, showsDate, toYmd } from "../src/util/dates.js";
+import { dateFormatOf, isoOf, monthOfHeading, shapedForBox, showsDate, showsValue, toYmd } from "../src/util/dates.js";
 
 describe("toYmd", () => {
   it("reads the ways a date is written", () => {
@@ -45,5 +45,37 @@ describe("showsDate", () => {
     expect(showsDate("June 1, 2027", d)).toBe(false);
     expect(showsDate("05/02/2027", d)).toBe(false);
     expect(showsDate("", d)).toBe(false);
+  });
+});
+
+describe("shapedForBox", () => {
+  it("writes a month in the format the box names", () => {
+    expect(shapedForBox("May 2027", "MM/DD/YYYY")).toBe("05/01/2027");
+    expect(shapedForBox("2027-05-03", "Date (dd-mm-yyyy)")).toBe("03-05-2027");
+    expect(shapedForBox("2027-05-03", "yyyy/mm/dd")).toBe("2027/05/03");
+  });
+  it("leaves a value alone when it is not a date or the box names no format", () => {
+    expect(shapedForBox("Negotiable", "MM/DD/YYYY")).toBe("Negotiable");
+    expect(shapedForBox("May 2027", "Start date")).toBe("May 2027");
+    expect(dateFormatOf("mm/mm/yyyy")).toBeNull();
+  });
+});
+
+describe("showsValue", () => {
+  it("accepts the site's own shape of the same value", () => {
+    expect(showsValue("7806958600", "(780) 695-8600")).toBe(true);
+    expect(showsValue("780-695-8600", "+1 780 695 8600")).toBe(true);
+    expect(showsValue("3", "33")).toBe(false);
+    expect(showsValue("github.com/someone", "https://github.com/someone/")).toBe(true);
+    expect(showsValue("May 2027", "05/01/2027")).toBe(true);
+    expect(showsValue("Two  words here", "two words here")).toBe(true);
+    expect(showsValue("Edmonton", "Edmonton, AB, Canada")).toBe(true);
+    expect(showsValue("Edmonton, Alberta, Canada", "Edmonton, AB, CAN")).toBe(true);
+    expect(showsValue("Edmonton, Alberta, Canada", "Calgary, AB, CAN")).toBe(false);
+  });
+  it("rejects a box that shows something else", () => {
+    expect(showsValue("May 2027", "02/27/")).toBe(false);
+    expect(showsValue("Edmonton", "")).toBe(false);
+    expect(showsValue("2027", "2026")).toBe(false);
   });
 });

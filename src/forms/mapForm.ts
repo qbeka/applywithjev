@@ -10,7 +10,7 @@
  */
 import { FORM, CACHE, PATHS } from "../config.js";
 import { hashOf, KeyedCache } from "../util/cache.js";
-import { isoOf, toYmd } from "../util/dates.js";
+import { isoOf, shapedForBox, toYmd } from "../util/dates.js";
 import type { JevClient } from "../jev/client.js";
 import { choice, noul } from "../jev/questions.js";
 import type { Answer, ChoiceAnswer, NoulAnswer, Questions } from "../jev/types.js";
@@ -387,7 +387,8 @@ export function planField(f: DumpedField, answer: Answer | undefined, profile: P
       if (!day) return { ...base, action: "review", key, value: null, confidence: a.confidence, note: "the calendar needs a date, and the profile's value is not one" };
       return { ...base, action: "fill", key, value: isoOf(day), confidence: a.confidence, note };
     }
-    return { ...base, action: "fill", key, value, confidence: a.confidence, note };
+    // A text box that names a date format gets the date written that way: typed as "May 2027", a masked box keeps "02/27/".
+    return { ...base, action: "fill", key, value: TEXT_KINDS.has(f.kind) ? shapedForBox(value, `${f.placeholder} ${f.hint}`) : value, confidence: a.confidence, note };
   }
   return { ...base, action: "review", key, value: null, confidence: a.confidence, note: "unrecognized key" };
 }

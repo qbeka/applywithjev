@@ -21,18 +21,22 @@
     if (st.opacity === "0" && el.tabIndex === -1) return false;
     return true;
   };
-  const text = (el) => (el ? (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim() : "");
+  // The words of an element. An icon's fallback text ("SVGs not supported by this browser.") is not one of them.
+  const text = (el) => (el ? (el.innerText || el.textContent || "").replace(/SVGs? not supported by this browser\.?/gi, "").replace(/\s+/g, " ").trim() : "");
   // An attribute value inside a quoted CSS selector: backslashes and quotes escaped.
   const attr = (v) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   const cssEscape = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/([^\w-])/g, "\\$1"));
   const unique = (s) => { try { return document.querySelectorAll(s).length === 1; } catch { return false; } };
   // Ids a UI library numbers on each render (FabricTextField-349, :r1:, radix-12) can change under us, so they are not used to find a field again.
   // An id that merely ends in digits (question_8595663005, school--0) is the form's own and stays put.
-  const RENDER_ID = /^(:r|radix-|headlessui-|mui-|react-aria|downshift-|rc_select_|el-id-|Fabric[A-Za-z]*-?\d|field-\d+$)/;
+  // A run of twelve or more letters and digits in both cases (nNpgf9k9eygQEJqI) is drawn at random on each render.
+  const RENDER_ID = /^(:r|radix-|headlessui-|mui-|react-aria|downshift-|rc_select_|el-id-|Fabric[A-Za-z]*-?\d|field-\d+$|(?=.*\d)(?=.*[a-z])(?=.*[A-Z])[A-Za-z0-9]{12,}$)/;
   const stableId = (id) => !!id && !RENDER_ID.test(id) && unique("#" + cssEscape(id));
   const selectorFor = (el) => {
-    if (stableId(el.id)) return "#" + cssEscape(el.id);
     const tag = el.tagName.toLowerCase();
+    // A radio button is one of a group, and the group is what gets set: its name finds it again whatever its id.
+    if (el.type === "radio" && el.name) return `${tag}[name="${attr(el.name)}"]`;
+    if (stableId(el.id)) return "#" + cssEscape(el.id);
     // A name the site's own tests use for the control stays put across renders.
     for (const a of ["data-testid", "data-ui", "data-qa"]) {
       const v = el.getAttribute(a);
@@ -197,7 +201,9 @@
     return "";
   };
   // A field that says it is optional is optional, whatever the box around it is called.
-  const isRequired = (el, label) => !/\(optional\)/i.test(label) && (el.required || el.getAttribute("aria-required") === "true" || /[*✱]\s*$|^\s*[*✱]|\(required\)/i.test(label) || /required/i.test(el.closest("[class*=required i]")?.className || ""));
+  // A drawn picker keeps the real, required input out of sight in the same box (Workable's comboboxes).
+  const hiddenRequiredTwin = (el) => { const box = el.closest("[data-input-type], [data-ui], [class*=field i]"); return !!box && [...box.querySelectorAll("input[required], select[required]")].some((t) => t !== el && !visible(t)); };
+  const isRequired = (el, label) => !/\(optional\)/i.test(label) && (el.required || el.getAttribute("aria-required") === "true" || /[*✱]\s*$|^\s*[*✱]|\(required\)/i.test(label) || /required/i.test(el.closest("[class*=required i]")?.className || "") || hiddenRequiredTwin(el));
 
   // A plain text input with a suggestion list beside it (Lever's location box) only accepts a picked suggestion.
   const hasSuggestBox = (el) => el.tagName === "INPUT" && !!el.parentElement && !!el.parentElement.querySelector('[class*="dropdown-results" i], [class*="autocomplete" i], [class*="typeahead" i], [class*="suggestions" i]');
@@ -213,6 +219,7 @@
   // The widget that draws a control, when it is one the tool knows. Controls of one widget take values the same way.
   const widgetOf = (el, isCalendar, drawnByLabel) => {
     if (isCalendar) return "calendar";
+    if (el.tagName === "BUTTON" && el.hasAttribute("aria-haspopup")) return "menu-button";
     if (el.closest(".iti")) return "intl-tel";
     if (el.closest('[class*="select__control"]')) return "react-select";
     if (el.closest(".selectize-input, .selectize-control")) return "selectize";
@@ -222,7 +229,9 @@
     if (el.tagName === "SELECT" && /select2-hidden/.test(el.className)) return "select2";
     return "";
   };
-  const controls = document.querySelectorAll("input, select, textarea, [role=combobox], [role=listbox]");
+  // A button that opens a list of choices (aria-haspopup, BambooHR's pickers) is a dropdown drawn without an input.
+  const MENU_BUTTON = 'button[aria-haspopup="true"], button[aria-haspopup="listbox"], button[aria-haspopup="menu"]';
+  const controls = document.querySelectorAll(`input, select, textarea, [role=combobox], [role=listbox], ${MENU_BUTTON}`);
   const containerOf = (el) => el.closest("fieldset, [class*=field i], [class*=question i], [data-field-path], [id^=question], .form-group") || el.parentElement;
   const usedContainers = new Set();
   const dumped = new Set();
@@ -231,13 +240,16 @@
   controls.forEach((el) => {
     const tag = el.tagName.toLowerCase();
     const type = (el.getAttribute("type") || (tag === "input" ? "text" : tag)).toLowerCase();
-    if (SKIP_TYPES.has(type)) return;
+    if (SKIP_TYPES.has(type) && !el.matches(MENU_BUTTON)) return;
     const isControl = ["input", "select", "textarea"].includes(tag);
+    // The list a combobox opens is that combobox's, not a question of its own.
+    if (!isControl && el.id && document.querySelector(`[aria-controls="${attr(el.id)}"], [aria-owns="${attr(el.id)}"]`)) return;
     // Custom widgets (react-select wrappers, live regions) are reported once, through the real input in the same question.
     if (!isControl) {
       if (el.querySelector("input, select, textarea")) return;
       const c = containerOf(el);
-      if (c && (usedContainers.has(c) || c.querySelector("input:not([type=hidden]), select, textarea"))) return;
+      // An input kept out of sight in the same box (BambooHR's state.value) is the widget's own store, not the control.
+      if (c && (usedContainers.has(c) || [...c.querySelectorAll("input:not([type=hidden]), select, textarea")].some(visible))) return;
     }
     if (isControl && type !== "radio") usedContainers.add(containerOf(el));
     // A radio or a checkbox is often drawn by its label, with the real box kept out of sight behind it.
@@ -245,9 +257,11 @@
     // A select2 list keeps the real <select> out of sight and draws its own box beside it.
     const drawnBySelect2 = tag === "select" && /select2-hidden/.test(el.className) && !!el.nextElementSibling && visible(el.nextElementSibling);
     if (!visible(el) && type !== "file" && !drawnByLabel && !drawnBySelect2) return;
-    // A box that cannot be typed into is skipped, unless it is a date box set through a calendar.
+    // A box that cannot be typed into is skipped, unless it is a date box set through a calendar
+    // or a list that opens on a click (Workable draws its pickers as read-only comboboxes).
     const isCalendar = el.readOnly && isControl && tag === "input" && looksLikeDateBox(el);
-    if (el.disabled || (el.readOnly && !isCalendar)) return;
+    const isPicker = el.readOnly && el.getAttribute("role") === "combobox";
+    if (el.disabled || (el.readOnly && !isCalendar && !isPicker)) return;
     // A text box hidden from people and from the keyboard is the site's own bookkeeping (the parts of an address it fills in itself).
     if (el.getAttribute("aria-hidden") === "true" && el.tabIndex === -1 && !["radio", "checkbox", "file"].includes(type) && !drawnBySelect2) return;
     const role = el.getAttribute("role");
@@ -255,7 +269,7 @@
     if (isCalendar) kind = "calendar";
     else if (tag === "select") kind = "select";
     else if (tag === "textarea") kind = "textarea";
-    else if (role === "combobox" || el.getAttribute("aria-autocomplete") === "list" || role === "listbox" || hasSuggestBox(el)) kind = "combobox";
+    else if (role === "combobox" || el.getAttribute("aria-autocomplete") === "list" || role === "listbox" || hasSuggestBox(el) || el.matches(MENU_BUTTON)) kind = "combobox";
     else if (type === "radio") kind = "radio";
     else if (type === "checkbox") kind = "checkbox";
     else if (type === "file") kind = "file";
@@ -281,7 +295,22 @@
     };
     // For an option, the question it answers says more than the page section it sits in.
     if (kind === "checkbox" || kind === "radio") f.section = groupQuestionFor(el) || optionQuestionFor(el) || f.section;
-    f.required = isRequired(el, f.label) || /[*✱]\s*$/.test(questionFor(el));
+    f.required = isRequired(el, f.label) || /[*✱]\s*$|^\s*[*✱]/.test(questionFor(el));
+    if (el.matches(MENU_BUTTON)) {
+      // The button's text is its current choice, or a placeholder. Its label is the form's own label for the box
+      // around it, or its aria-label with that choice taken off the end ("Country United States").
+      const own = text(el);
+      const shownNow = /^[-–—\s]*(select|select\.\.\.|select an option|select one|choose|search|please select)?[-–—\s]*$/i.test(own) ? "" : own;
+      let named = "";
+      for (let cur = el, depth = 0; cur && depth < 5 && !named; cur = cur.parentElement, depth++) {
+        if (cur.id) named = [...document.querySelectorAll(`label[for="${cssEscape(cur.id)}"]`)].map(text).join(" ");
+      }
+      const al = (el.getAttribute("aria-label") || "").trim();
+      if (!named && al) named = own && al.endsWith(own) ? al.slice(0, -own.length).trim() : al;
+      f.label = (named || f.label).slice(0, LABEL_MAX);
+      f.value = shownNow;
+      f.required = f.required || isRequired(el, f.label);
+    }
     if (kind !== "radio" && kind !== "checkbox") f.label = cleanLabel(el, f.label);
     if (kind === "file") {
       f.label = fileLabel(el, f.label);
@@ -298,8 +327,10 @@
         f.options.push({ value: r.value, label: text(l) || r.value });
         if (r.checked) f.value = r.value;
       });
-      const fs = el.closest("fieldset");
+      const fs = el.closest("fieldset, [role=radiogroup]");
+      const named = fs && fs.getAttribute("aria-labelledby") ? fs.getAttribute("aria-labelledby").split(/\s+/).map((id) => text(document.getElementById(id))).filter(Boolean).join(" ") : "";
       if (fs && fs.querySelector("legend")) f.label = text(fs.querySelector("legend")) || f.label;
+      else if (named) f.label = named.slice(0, LABEL_MAX);
       else if (!f.label || f.options.some((o) => o.label === f.label)) {
         let cur = el.parentElement, depth = 0;
         while (cur && depth < 5) { const l = cur.querySelector("legend, label, [class*=label i], h2, h3, h4"); if (l && text(l) && !f.options.some((o) => o.label === text(l))) { f.label = text(l); break; } cur = cur.parentElement; depth++; }
@@ -309,7 +340,9 @@
       const head = box && [...box.querySelectorAll("legend, label, [class*=question-title i]")].find((h) => !h.querySelector("input") && !f.options.some((o) => o.label === text(h)));
       if (head && (/required/i.test(String(head.getAttribute("class") || "")) || /[*✱]\s*$|^\s*[*✱]/.test(text(head)))) f.required = true;
       if (box && box.getAttribute("aria-required") === "true") f.required = true;
-      f.label = f.label.replace(/\s*[*✱]\s*$/, "");
+      // The question itself may carry the mark, before or after the words.
+      if (/^\s*[*✱]|[*✱]\s*$/.test(f.label) || /^\s*[*✱]/.test(f.section)) f.required = true;
+      f.label = f.label.replace(/^\s*[*✱]\s*|\s*[*✱]\s*$/g, "");
     } else if (kind === "select") {
       [...el.options].forEach((o) => { if (o.value !== "" || o.text.trim()) f.options.push({ value: o.value, label: o.text.trim() }); });
       f.value = el.value;
@@ -317,12 +350,12 @@
       f.checked = el.checked;
       f.value = el.value;
     } else if (kind === "combobox") {
-      f.value = el.value || "";
+      f.value = el.value || f.value || "";
       const listId = el.getAttribute("aria-controls") || el.getAttribute("aria-owns");
       const list = listId ? document.getElementById(listId) : null;
       if (list) list.querySelectorAll("[role=option]").forEach((o) => f.options.push({ value: text(o), label: text(o) }));
     } else {
-      f.value = el.value || "";
+      f.value = el.value || f.value || "";
     }
     fields.push(f);
     dumped.add(el);
@@ -395,9 +428,13 @@
   const form = fields.length && document.querySelector(fields[0].selector)?.closest("form");
   const headings = [...(form || document).querySelectorAll("h1, h2, h3, p")].slice(0, 8).map(text).filter(Boolean);
   out.context = headings.join(" | ").slice(0, 800);
-  (form || document).querySelectorAll("button, input[type=submit], [role=button]").forEach((b) => {
+  const SUBMIT_WORD = /submit|apply|send|continue|next|review|finish|soumettre|postuler|envoyer/i;
+  const submitLike = (root) => [...root.querySelectorAll("button, input[type=submit], [role=button]")].filter((b) => SUBMIT_WORD.test((text(b) || b.value || b.getAttribute("aria-label") || "").trim()) && visible(b));
+  // The button may sit outside the form element (BambooHR draws it in a footer of its own), so the page is searched when the form has none.
+  const buttons = form && submitLike(form).length ? submitLike(form) : submitLike(document);
+  buttons.forEach((b) => {
     const t = (text(b) || b.value || b.getAttribute("aria-label") || "").trim();
-    if (/submit|apply|send|continue|next|review|finish|soumettre|postuler|envoyer/i.test(t) && visible(b)) out.submitSelectors.push(selectorFor(b) + "  /* " + t.slice(0, 40) + " */");
+    out.submitSelectors.push(selectorFor(b) + "  /* " + t.slice(0, 40) + " */");
   });
   return JSON.stringify(out);
 })();

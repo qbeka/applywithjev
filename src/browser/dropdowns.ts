@@ -6,7 +6,8 @@
 import { BROWSER, FORM } from "../config.js";
 import type { DumpedField } from "../forms/fields.js";
 import { sleep, type Page } from "./cdp.js";
-import { inFront, norm, type Point } from "./session.js";
+import { inFront, norm, shownValues, type Point } from "./session.js";
+import { showsValue } from "../util/dates.js";
 
 /** Polls an open dropdown until its options settle, or until `enough` says the wanted one has arrived. */
 async function waitOptions(page: Page, selector: string, typed: boolean, enough?: (opts: string[]) => boolean): Promise<string[]> {
@@ -169,6 +170,11 @@ export function fillDropdownByClicking(page: Page, selector: string, value: stri
 async function clickAndPick(page: Page, selector: string, value: string, hints: string[]): Promise<string | null> {
   if (!(await openDropdown(page, selector))) return "control not found";
   let opts = await waitOptions(page, selector, false);
+  if (!opts.length) {
+    // The first click may only have closed the list before it; a second one opens this list.
+    await openDropdown(page, selector);
+    opts = await waitOptions(page, selector, false);
+  }
   let choice = pickOption(opts, value, hints);
   if (!choice) {
     // Search-as-you-type lists. A place is searched by its city; anything else by the full value, then its first word.
@@ -190,13 +196,21 @@ async function clickAndPick(page: Page, selector: string, value: string, hints: 
     await closeDropdown(page);
     return `no option matches "${value}"${opts.length ? ` among: ${opts.slice(0, 12).join(" | ")}` : ""}`;
   }
-  const p = await page.awj<Point>("optionPoint", selector, choice);
+  // Finding the option scrolls it into view, and a list drawn beside its box moves with the box a moment later.
+  // The point is read again once the page has settled, so the click lands on this row and not the one below.
+  let p = await page.awj<Point>("optionPoint", selector, choice);
+  if (p.ok) {
+    await sleep(BROWSER.pollMs);
+    p = await page.awj<Point>("optionPoint", selector, choice);
+  }
   if (!p.ok) {
     await closeDropdown(page);
     return `option "${choice}" could not be clicked`;
   }
   await page.click(p.x, p.y);
   await sleep(BROWSER.pollMs);
+  const shown = (await shownValues(page, [selector]))[0] ?? "";
+  if (shown && !showsValue(choice, shown)) return `the list shows "${shown.slice(0, 40)}" after "${choice}" was clicked`;
   return null;
 }
 

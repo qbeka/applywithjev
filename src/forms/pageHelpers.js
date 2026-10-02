@@ -5,7 +5,8 @@
   const q = (s) => document.querySelector(s);
   // An attribute value inside a quoted CSS selector: backslashes and quotes escaped.
   const attr = (v) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  const text = (el) => (el ? (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim() : "");
+  // The words of an element. An icon's fallback text ("SVGs not supported by this browser.") is not one of them.
+  const text = (el) => (el ? (el.innerText || el.textContent || "").replace(/SVGs? not supported by this browser\.?/gi, "").replace(/\s+/g, " ").trim() : "");
   const visible = (el) => {
     if (!el || !el.isConnected) return false;
     const r = el.getBoundingClientRect();
@@ -27,11 +28,15 @@
     const r = el.getBoundingClientRect();
     return (r.width === 0 || r.height === 0) && el.closest('[data-testid="select-controller"]') ? el.closest('[data-testid="select-controller"]') : el;
   };
+  // The list a picker opens: named by aria-controls or aria-owns, or by the menu id a button carries (BambooHR).
+  const listRootOf = (el) => {
+    const listId = el.getAttribute("aria-controls") || el.getAttribute("aria-owns") || el.getAttribute("data-menu-id");
+    return listId ? document.getElementById(listId) : null;
+  };
   const optionEls = (sel) => {
     const el = q(sel);
     if (!el) return [];
-    const listId = el.getAttribute("aria-controls") || el.getAttribute("aria-owns");
-    let root = listId ? document.getElementById(listId) : null;
+    let root = listRootOf(el);
     if (!root) {
       const wrap = el.closest('[class*="container"], [class*="select"], [class*="field"], [class*="question"]');
       root = wrap ? wrap.querySelector('[role=listbox], [class*="menu"]') : null;
@@ -47,7 +52,7 @@
       if (list) return [...list.querySelectorAll("option, [role=option]")].filter(visible);
     }
     if (!root && el.getAttribute("aria-expanded") !== "true") return [];
-    const all = root ? [...root.querySelectorAll(root.tagName === "DATALIST" ? "option, [role=option]" : "[role=option]")] : [...document.querySelectorAll("[role=option]")].filter((o) => !o.closest(".iti"));
+    const all = root ? [...root.querySelectorAll(root.tagName === "DATALIST" ? "option, [role=option]" : "[role=option], [role=menuitem]")] : [...document.querySelectorAll("[role=option]")].filter((o) => !o.closest(".iti"));
     return all.filter(visible);
   };
   // Dropdown components keep their option list and their select handler on their own props.
@@ -154,7 +159,10 @@
     /** True when keyboard input would land in this control right now. */
     hasFocus(sel) {
       const el = q(sel);
-      return !!el && (document.activeElement === el || el.contains(document.activeElement));
+      if (!el) return false;
+      // A menu that opened with its own search box took the keyboard on purpose: typing goes to the list.
+      const list = listRootOf(el);
+      return document.activeElement === el || el.contains(document.activeElement) || (!!list && list.contains(document.activeElement));
     },
     /** Puts the keyboard in a text box. False for anything that is not one, or that would not take it. */
     focus(sel) {
@@ -242,10 +250,10 @@
         return el.files && el.files.length ? el.files[0].name : /\.pdf/i.test(text(wrap)) ? text(wrap).slice(0, 80) : "";
       }
       if (el.tagName === "SELECT") return el.selectedOptions[0] && el.value !== "" ? text(el.selectedOptions[0]) : "";
-      if (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA" && el.getAttribute("role") === "combobox") {
+      if (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA" && (el.getAttribute("role") === "combobox" || el.hasAttribute("aria-haspopup"))) {
         // A dropdown drawn without an input shows its value as its own text, or a placeholder when empty.
         const t = text(el);
-        return /^(select|select\.\.\.|select an option|choose|search|please select)?$/i.test(t) ? "" : t;
+        return /^[-–—\s]*(select|select\.\.\.|select an option|select one|choose|search|please select)?[-–—\s]*$/i.test(t) ? "" : t;
       }
       if (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA") {
         // A button group: the pressed button's text.

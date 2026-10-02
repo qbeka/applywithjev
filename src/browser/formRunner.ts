@@ -20,6 +20,7 @@ import { closeTab, ensureBrowser, newTab, Page, sleep } from "./cdp.js";
 import { candidateOptions, closestOptions, readDropdownOptions } from "./dropdowns.js";
 import { applyFills, TYPED_KINDS, uploadFile, type FillGuide } from "./fill.js";
 import { learn, notesFor, signatureOf, type Method } from "../knowledge/sites.js";
+import { showsValue } from "../util/dates.js";
 import { blockedReport, comparePages, emptyRequired, emptyRequiredFields, isClean, isReady, loadPlan, loadReport, pickNext, savePlan, saveReport, SIGN_IN_REASON, splitFailures, type Failure, type FieldReport, type Fill, type FillReport } from "./report.js";
 import { controlStates, dump, goto, inFront, inTurn, install, loadSession, pageFor, saveSession, settle, shownValues, trace, type Point } from "./session.js";
 
@@ -322,8 +323,12 @@ async function readBack(page: Page, d: FieldsDump, plan: FillPlan, failedRaw: Fa
   const states = await controlStates(page, plan.fields.map((f) => f.selector));
   const failed = [...failedRaw];
   plan.fields.forEach((f, i) => {
-    if ((f.action === "fill" || f.action === "upload") && !fields[i]?.shown && states[i] !== "off" && !failed.some((x) => x.selector === f.selector)) {
+    if (states[i] === "off" || failed.some((x) => x.selector === f.selector)) return;
+    const shownNow = fields[i]?.shown ?? "";
+    if ((f.action === "fill" || f.action === "upload") && !shownNow) {
       failed.push({ selector: f.selector, why: states[i] === "missing" ? "the control is no longer on the page" : "the value is not confirmed on the page" });
+    } else if (f.action === "fill" && f.value && (TYPED_KINDS.has(f.kind) || f.kind === "combobox") && !showsValue(f.value, shownNow)) {
+      failed.push({ selector: f.selector, why: `the box shows "${shownNow.slice(0, 40)}" instead of "${f.value.slice(0, 40)}"` });
     }
   });
   const { holds, leftBlank } = splitFailures(plan, failed, fields.map((f) => f.shown));

@@ -9,6 +9,7 @@ import type { Method } from "../knowledge/sites.js";
 import type { Profile } from "../profile/schema.js";
 import { sleep, type Page } from "./cdp.js";
 import { pickDate } from "./calendar.js";
+import { showsValue } from "../util/dates.js";
 import { fillDropdown, fillDropdownByClicking } from "./dropdowns.js";
 import type { Failure, Fill } from "./report.js";
 import { controlStates, inFront, script, shownValues, trace, type Point } from "./session.js";
@@ -109,12 +110,15 @@ export async function applyFills(page: Page, fills: Fill[], profile: Profile, gu
       if (!failed.some((x) => x.selector === f.selector)) failed.push({ selector: f.selector, why: "the control is no longer on the page" });
       continue;
     }
-    if (shown[i]) guide?.landed(f.selector, how.get(f.selector) ?? "script");
-    if (shown[i] || failed.some((x) => x.selector === f.selector)) continue;
+    // A typed box must show the value it was given, in whatever shape the site writes it. Anything else is a retry.
+    const landed = !!shown[i] && (!(TYPED_KINDS.has(f.kind) || f.kind === "combobox") || showsValue(f.value, shown[i] ?? ""));
+    if (landed) guide?.landed(f.selector, how.get(f.selector) ?? "script");
+    if (landed || failed.some((x) => x.selector === f.selector)) continue;
     if (f.kind === "checkbox" && !/^(true|yes|1|on|checked)$/i.test(f.value)) continue;
     const why = f.kind === "combobox" ? await fillDropdownByClicking(page, f.selector, f.value, hints) : TYPED_KINDS.has(f.kind) ? await typeInto(page, f.selector, f.value) : f.kind === "radio" ? await clickGroupOption(page, f.selector, f.value) : "the page did not keep the value";
-    const after = (await shownValues(page, [f.selector]))[0];
+    const after = (await shownValues(page, [f.selector]))[0] ?? "";
     if (why || !after) failed.push({ selector: f.selector, why: why ?? "the page did not keep the value" });
+    else if ((TYPED_KINDS.has(f.kind) || f.kind === "combobox") && !showsValue(f.value, after)) failed.push({ selector: f.selector, why: `the box shows "${after.slice(0, 40)}" instead of "${f.value.slice(0, 40)}"` });
     else guide?.landed(f.selector, TYPED_KINDS.has(f.kind) ? "typed" : "clicked");
   }
   return failed;
