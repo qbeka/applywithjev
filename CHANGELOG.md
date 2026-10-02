@@ -61,7 +61,22 @@ Keep a Changelog and the project uses Conventional Commits.
   is recorded as blocked instead of holding up the run.
 - A pause between submissions to the same site (`RUN.submitGapMs`).
 
+- `apply` sends each form as soon as it is ready. Every job moves on its own
+  through fill, resolve and submit, and its result is printed and recorded
+  when it happens, so a run that is cut short has sent what was done.
+- Optional `transcript.path` in the profile, attached only to a file box
+  that asks for a transcript.
+
 ### Changed
+- An optional field the tool could not set, and which the page shows empty,
+  is reported as left blank and no longer holds the form.
+- A file box is named by the question above it, not by its button. Extra
+  file boxes (a transcript, a cover letter) no longer receive the resume.
+- A form with a Next button and no Submit is recorded as "runs over several
+  pages" after its first page, instead of failing at submit.
+- An Apply link that opens a new tab is followed in the same tab.
+- Selectors prefer the names a site gives its own controls (`data-testid`),
+  which survive a re-render where numbered ids and generated names do not.
 - A page that still shows the form after Submit, with no error, is watched a
   little longer before the result is recorded. A slow confirmation was being
   recorded as not sent.
@@ -94,6 +109,18 @@ Keep a Changelog and the project uses Conventional Commits.
 - The project and its skills run Claude Code on Sonnet 5.5 at high effort.
 
 ### Fixed
+- Workable forms: Yes/No rows are clicked on their real radio button, a
+  required mark before the question is read, and the address parts the site
+  fills in itself are left alone.
+- The resume box was "not found" on a form reached through a careers page
+  (Databricks), and each dropdown there waited three seconds for requests
+  the previous page had left unanswered. Filling took 165 seconds; now 5.
+- A controls group above the application (a job-alert box) is no longer
+  taken for part of it.
+- A phone box that throws away a value set by script, or when focus is taken
+  from it by script, is typed into and left with the Tab key.
+- A location list drawn from a `datalist` is read.
+- Typing went nowhere when a click had not yet put the keyboard in the box.
 - Work-history dates and the "current role" box are filled from the most
   recent job in the profile instead of being guessed. JEV now sees the work
   history, so "how many internships" is counted, not estimated.

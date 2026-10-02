@@ -99,7 +99,7 @@ export function atsFromUrl(url: string): Ats {
   if (on("bamboohr.com")) return "bamboohr";
   if (on("taleo.net")) return "taleo";
   if (on("oraclecloud.com")) return "oracle";
-  if (on("successfactors.com", "jobs.sap.com")) return "successfactors";
+  if (on("successfactors.com", "jobs.sap.com") || /[?&]ats=successfactors\b/.test(u)) return "successfactors";
   if (on("linkedin.com")) return "linkedin";
   if (on("amazon.jobs")) return "amazon";
   return "other";

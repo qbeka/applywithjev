@@ -19,7 +19,14 @@
     return { x: r.left + r.width / 2, y: r.top + r.height / 2, ok: r.width > 0 && r.height > 0 };
   };
   // Only a dropdown's own frame counts: a looser match would land clicks on some unrelated wrapper.
-  const control = (el) => (el.getAttribute("role") === "combobox" && el.closest('[class*="select__control"], [class$="-control"]')) || el;
+  const control = (el) => {
+    if (el.getAttribute("role") !== "combobox") return el;
+    const frame = el.closest('[class*="select__control"], [class$="-control"]');
+    if (frame) return frame;
+    // A search box that is only drawn while its list is open: the closed dropdown around it is what gets clicked.
+    const r = el.getBoundingClientRect();
+    return (r.width === 0 || r.height === 0) && el.closest('[data-testid="select-controller"]') ? el.closest('[data-testid="select-controller"]') : el;
+  };
   const optionEls = (sel) => {
     const el = q(sel);
     if (!el) return [];
@@ -34,8 +41,13 @@
       const box = el.parentElement && el.parentElement.querySelector('[class*="dropdown-results" i], [class*="autocomplete" i] ul, [class*="typeahead" i] ul, [class*="suggestions" i]');
       if (box) return [...box.children].filter(visible);
     }
+    if (!root) {
+      // A list the page draws from a <datalist> beside the input.
+      const list = el.parentElement && el.parentElement.querySelector("datalist, [role=listbox]");
+      if (list) return [...list.querySelectorAll("option, [role=option]")].filter(visible);
+    }
     if (!root && el.getAttribute("aria-expanded") !== "true") return [];
-    const all = root ? [...root.querySelectorAll("[role=option]")] : [...document.querySelectorAll("[role=option]")].filter((o) => !o.closest(".iti"));
+    const all = root ? [...root.querySelectorAll(root.tagName === "DATALIST" ? "option, [role=option]" : "[role=option]")] : [...document.querySelectorAll("[role=option]")].filter((o) => !o.closest(".iti"));
     return all.filter(visible);
   };
   // Dropdown components keep their option list and their select handler on their own props.
@@ -140,6 +152,13 @@
       const el = q(sel);
       return !!el && (document.activeElement === el || el.contains(document.activeElement));
     },
+    /** Puts the keyboard in a text box. False for anything that is not one, or that would not take it. */
+    focus(sel) {
+      const el = q(sel);
+      if (!el || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) return false;
+      el.focus();
+      return document.activeElement === el;
+    },
     selectAll() {
       const a = document.activeElement;
       if (a && typeof a.select === "function") a.select();
@@ -149,6 +168,14 @@
     },
     optionPoint(sel, label) {
       const o = optionEls(sel).find((x) => text(x) === label);
+      return o ? center(o) : { x: 0, y: 0, ok: false };
+    },
+    /** Centre of one choice in a button group or a drawn radio row, for a real click. */
+    groupOptionPoint(sel, label) {
+      const el = q(sel);
+      if (!el) return { x: 0, y: 0, ok: false };
+      const want = label.toLowerCase().trim();
+      const o = [...el.querySelectorAll("button, [role=radio], [role=option], label")].find((x) => visible(x) && text(x).toLowerCase() === want);
       return o ? center(o) : { x: 0, y: 0, ok: false };
     },
     /** What the control shows as its current value. */
@@ -210,7 +237,11 @@
     clickByText(pattern) {
       const re = new RegExp(pattern, "i");
       const b = [...document.querySelectorAll("a, button, [role=button]")].find((x) => visible(x) && re.test(text(x)));
-      return b ? center(b) : { x: 0, y: 0, ok: false };
+      if (!b) return { x: 0, y: 0, ok: false };
+      // Where the button leads, when it is a plain link to another page.
+      const a = b.closest("a[href]");
+      const href = a && /^https?:/.test(a.href) && a.href.split("#")[0] !== location.href.split("#")[0] ? a.href : undefined;
+      return { ...center(b), href };
     },
   };
   return "ok";

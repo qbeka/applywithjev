@@ -28,11 +28,21 @@
   const unique = (s) => { try { return document.querySelectorAll(s).length === 1; } catch { return false; } };
   // Ids a UI library numbers on each render (FabricTextField-349, :r1:, radix-12) can change under us, so they are not used to find a field again.
   // An id that merely ends in digits (question_8595663005, school--0) is the form's own and stays put.
-  const RENDER_ID = /^(:r|radix-|headlessui-|mui-|react-aria|downshift-|rc_select_|el-id-|Fabric[A-Za-z]*-?\d)/;
+  const RENDER_ID = /^(:r|radix-|headlessui-|mui-|react-aria|downshift-|rc_select_|el-id-|Fabric[A-Za-z]*-?\d|field-\d+$)/;
   const stableId = (id) => !!id && !RENDER_ID.test(id) && unique("#" + cssEscape(id));
   const selectorFor = (el) => {
     if (stableId(el.id)) return "#" + cssEscape(el.id);
     const tag = el.tagName.toLowerCase();
+    // A name the site's own tests use for the control stays put across renders.
+    for (const a of ["data-testid", "data-ui", "data-qa"]) {
+      const v = el.getAttribute(a);
+      if (v && unique(`${tag}[${a}="${attr(v)}"]`)) return `${tag}[${a}="${attr(v)}"]`;
+    }
+    // Next best: the nearest container the site names, when it holds exactly one control of this kind.
+    for (let cur = el.parentElement, depth = 0; cur && depth < 6; cur = cur.parentElement, depth++) {
+      const v = cur.getAttribute("data-testid");
+      if (v && unique(`[data-testid="${attr(v)}"] ${tag}`) && unique(`[data-testid="${attr(v)}"]`)) return `[data-testid="${attr(v)}"] ${tag}`;
+    }
     if (el.name) {
       const s = `${tag}[name="${attr(el.name)}"]`;
       if (unique(s) || el.type === "radio") return s;
@@ -66,10 +76,40 @@
     }
     return "";
   };
+  // What the site itself calls the control, as words: "phone_number-code" reads "phone number code".
+  const ownName = (el) => {
+    for (let cur = el, depth = 0; cur && depth < 8; cur = cur.parentElement, depth++) {
+      const v = cur.getAttribute("data-testid") || cur.getAttribute("data-ui") || "";
+      const words = v.replace(/^(input|select|field)[-_]/i, "").replace(/[-_]+/g, " ").trim();
+      if (words && !/^(select|search|input|controller|option|wrapper)\b/i.test(words) && !/^[A-Za-z]{0,3}\d+$/.test(words)) return words;
+    }
+    return "";
+  };
   const cleanLabel = (el, label) => {
     const stripped = label.replace(/^(select\.\.\.|select an option|select|search|textbox)\s+/i, "").trim();
     if (stripped && !GENERIC.test(stripped)) return stripped;
-    return questionFor(el).replace(/\s*[*✱]\s*$/, "").slice(0, LABEL_MAX) || label;
+    return questionFor(el).replace(/\s*[*✱]\s*$/, "").slice(0, LABEL_MAX) || ownName(el) || label;
+  };
+  // A file box is usually labelled by its button ("Attach", "Choose file"). Which file it wants is said by the question above it.
+  const FILE_BUTTON = /^(attach|upload|upload file|choose file|select file|browse|replace file|drop or select|drag and drop|svgs? not supported)/i;
+  // The question above a file box, skipping the box's own buttons ("Attach", "Dropbox", "Enter manually").
+  const fileQuestion = (el) => {
+    let cur = el;
+    for (let depth = 0; cur && cur !== document.body && depth < 8; depth++, cur = cur.parentElement) {
+      let sib = cur.previousElementSibling;
+      while (sib) {
+        if (sib.tagName === "H1" || sib.querySelector("h1")) return "";
+        const t = text(sib);
+        if (t && t.length <= LABEL_MAX && !GENERIC.test(t) && !FILE_BUTTON.test(t) && !sib.querySelector("input, select, textarea, button, [role=combobox]")) return t;
+        sib = sib.previousElementSibling;
+      }
+    }
+    return "";
+  };
+  const fileLabel = (el, label) => {
+    if (label && !FILE_BUTTON.test(label)) return label;
+    const said = fileQuestion(el) || ownName(el) || (el.name || el.id || "").replace(/[-_]+/g, " ");
+    return said && !FILE_BUTTON.test(said) ? `${said.replace(/\s*[*✱]\s*$/, "")} (${label || "file"})`.slice(0, LABEL_MAX) : label;
   };
   const labelFor = (el) => {
     const bits = [];
@@ -138,7 +178,7 @@
     }
     return "";
   };
-  const isRequired = (el, label) => el.required || el.getAttribute("aria-required") === "true" || /[*✱]\s*$|\(required\)/i.test(label) || /required/i.test(el.closest("[class*=required i]")?.className || "");
+  const isRequired = (el, label) => el.required || el.getAttribute("aria-required") === "true" || /[*✱]\s*$|^\s*[*✱]|\(required\)/i.test(label) || /required/i.test(el.closest("[class*=required i]")?.className || "");
 
   // A plain text input with a suggestion list beside it (Lever's location box) only accepts a picked suggestion.
   const hasSuggestBox = (el) => el.tagName === "INPUT" && !!el.parentElement && !!el.parentElement.querySelector('[class*="dropdown-results" i], [class*="autocomplete" i], [class*="typeahead" i], [class*="suggestions" i]');
@@ -146,6 +186,7 @@
   const containerOf = (el) => el.closest("fieldset, [class*=field i], [class*=question i], [data-field-path], [id^=question], .form-group") || el.parentElement;
   const usedContainers = new Set();
   const dumped = new Set();
+  const elementOf = new Map();
   let i = 0;
   controls.forEach((el) => {
     const tag = el.tagName.toLowerCase();
@@ -161,6 +202,8 @@
     if (isControl && type !== "radio") usedContainers.add(containerOf(el));
     if (!visible(el) && type !== "file") return;
     if (el.disabled || el.readOnly) return;
+    // A text box hidden from people and from the keyboard is the site's own bookkeeping (the parts of an address it fills in itself).
+    if (el.getAttribute("aria-hidden") === "true" && el.tabIndex === -1 && !["radio", "checkbox", "file"].includes(type)) return;
     const role = el.getAttribute("role");
     let kind;
     if (tag === "select") kind = "select";
@@ -192,6 +235,10 @@
     if (kind === "checkbox" || kind === "radio") f.section = groupQuestionFor(el) || f.section;
     f.required = isRequired(el, f.label) || /[*✱]\s*$/.test(questionFor(el));
     if (kind !== "radio" && kind !== "checkbox") f.label = cleanLabel(el, f.label);
+    if (kind === "file") {
+      f.label = fileLabel(el, f.label);
+      f.required = f.required || /[*✱]\s*$/.test(fileQuestion(el));
+    }
 
     if (kind === "radio") {
       const key = el.name || f.selector;
@@ -225,6 +272,7 @@
     }
     fields.push(f);
     dumped.add(el);
+    elementOf.set(f, el);
   });
 
   // Button groups: a labelled field whose choices are plain <button>s (Ashby's Yes/No, some custom forms).
@@ -248,10 +296,10 @@
       selector: selectorFor(c),
       kind: "radio",
       name: c.getAttribute("data-field-path") || "",
-      label: label.replace(/\s*[*✱]\s*$/, "").slice(0, LABEL_MAX),
+      label: label.replace(/\s*[*✱]\s*$/, "").replace(/^\s*[*✱]\s*/, "").slice(0, LABEL_MAX),
       hint: hintFor(c),
       placeholder: "",
-      required: /required/i.test(labelEl?.className || "") || /[*✱]\s*$/.test(labelEl ? text(labelEl) : label) || c.getAttribute("aria-required") === "true",
+      required: /required/i.test(labelEl?.className || "") || /[*✱]\s*$|^\s*[*✱]/.test(labelEl ? text(labelEl) : label) || c.getAttribute("aria-required") === "true" || !!c.querySelector('[aria-required="true"], input[required]'),
       value: selected ? text(selected) : "",
       options: buttons.map((b) => ({ value: text(b), label: text(b) })),
       accept: "",
@@ -261,6 +309,18 @@
       buttonGroup: true,
     });
   });
+
+  // The application is the <form> that holds the resume or the email box. A control that sits above
+  // that form and outside it (a job-alert box, a site search) is not part of the application.
+  const inForm = (kind) => fields.find((f) => f.kind === kind && elementOf.get(f) && elementOf.get(f).closest("form"));
+  const anchor = inForm("file") || inForm("email");
+  const application = anchor ? elementOf.get(anchor).closest("form") : null;
+  if (application) {
+    for (let k = fields.length - 1; k >= 0; k--) {
+      const el = elementOf.get(fields[k]);
+      if (el && !application.contains(el) && (application.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING)) fields.splice(k, 1);
+    }
+  }
 
   // Some careers sites embed the real form in an iframe (Greenhouse, Lever). Report those so the caller can navigate into one.
   out.hasPassword = [...document.querySelectorAll("input[type=password]")].some(visible);

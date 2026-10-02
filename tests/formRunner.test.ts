@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { isFormWrite } from "../src/browser/cdp.js";
-import { closestOptions, pickOption } from "../src/browser/formRunner.js";
+import { closestOptions, continuesOnAnotherPage, pickOption, pickSubmit, splitFailures } from "../src/browser/formRunner.js";
 
 const hints = ["Edmonton", "Alberta", "AB", "Canada"];
 
@@ -69,5 +69,43 @@ describe("the in-page scripts", () => {
     const src = readFileSync(new URL("../src/forms/dumpFields.js", import.meta.url), "utf8");
     expect(src).toMatch(/SKIP_TYPES = new Set\(\[[^\]]*"password"/);
     expect(src).toContain("out.hasPassword");
+  });
+});
+
+describe("what holds a form and what does not", () => {
+  const field = (selector: string, over: Record<string, unknown> = {}) => ({ id: selector, selector, kind: "text", label: selector, required: false, action: "fill", key: "x", value: "v", confidence: 1, note: null, ...over });
+  const plan = { fields: [field("#opt"), field("#req", { required: true }), field("#wrong"), field("#cv", { kind: "file", action: "upload" }), field("#pay", { required: true, label: "Salary Range" })] } as unknown as Parameters<typeof splitFailures>[0];
+  const shown = ["", "", "Something else", "", ""];
+  const why = "the page did not keep the value";
+  it("lets an optional field that the page shows empty go blank", () => {
+    const { holds, leftBlank } = splitFailures(plan, [{ selector: "#opt", why }], shown);
+    expect(holds).toEqual([]);
+    expect(leftBlank).toEqual([{ selector: "#opt", why }]);
+  });
+  it("holds the form for a required field, a field showing another value, the resume, and a field the plan does not know", () => {
+    const { holds, leftBlank } = splitFailures(plan, [{ selector: "#req", why }, { selector: "#wrong", why }, { selector: "#cv", why: "file input not found" }, { selector: "#gone", why }], shown);
+    expect(holds.map((f) => f.selector)).toEqual(["#req", "#wrong", "#cv", "#gone"]);
+    expect(leftBlank).toEqual([]);
+  });
+  it("holds the form when its own server refused a save, even on an optional field", () => {
+    expect(splitFailures(plan, [{ selector: "#opt", why: "the form's own server refused 1 save(s): 429" }], shown).holds).toHaveLength(1);
+  });
+  it("says what a pay box that takes only a number is waiting for", () => {
+    expect(splitFailures(plan, [{ selector: "#pay", why }], shown).holds[0]?.why).toMatch(/takes only a number/);
+  });
+});
+
+describe("the button that sends a form", () => {
+  it("is Submit before Apply, in English or French, and never a LinkedIn helper", () => {
+    expect(pickSubmit(["#a  /* Apply with LinkedIn */", "#b  /* Submit application */"])?.selector).toBe("#b");
+    expect(pickSubmit(["#a  /* Apply with LinkedIn */"])).toBeNull();
+    expect(pickSubmit(["#s  /* Soumettre la candidature */"])?.selector).toBe("#s");
+    expect(pickSubmit(["#p  /* Postuler */"])?.selector).toBe("#p");
+  });
+  it("tells one page of several from a whole form", () => {
+    expect(continuesOnAnotherPage(['button[name="next"]  /* Next */'])).toBe(true);
+    expect(continuesOnAnotherPage(["#c  /* Save and continue */"])).toBe(true);
+    expect(continuesOnAnotherPage(["#n  /* Next */", "#s  /* Submit application */"])).toBe(false);
+    expect(continuesOnAnotherPage([])).toBe(false);
   });
 });

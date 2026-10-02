@@ -161,7 +161,9 @@ and each cause is now fixed. A rehearsal shows you every answer before
 anything is sent, so read it the first time you use the tool.
 
 A form is "ready" only when every answer is confirmed and no required
-question is empty. The tool will not send any other form.
+question is empty. The tool will not send any other form. One case does not
+hold a form: an optional question the tool could not answer is left empty,
+and the report says so.
 
 ## What the tool handles
 
@@ -210,7 +212,9 @@ date. It ranks the job lower and leaves the choice to you.
 | Greenhouse | Works well. After several applications in a short time, Greenhouse emails you a code to confirm that a person is applying. The tool stops there and leaves the form open. You type the code and send the form, then run `check <job id>` to record it. |
 | Ashby | Works well. The tool fills these forms one field at a time, because Ashby saves each field as you type. |
 | Lever | Works well. Lever shows a "prove you are human" test when you send, which you do yourself. |
-| Rippling, BambooHR | Works in part. The tool fills what it can confirm and holds the form if anything is uncertain. |
+| Rippling, Workable | Works. Tested on a few forms each. |
+| BambooHR | Works in part. The tool fills what it can confirm and holds the form if anything is uncertain. |
+| Tesla and other forms that run over several pages | The tool fills the first page, sees that the form goes on, and stops. See [What is planned](#what-is-planned). |
 | Jobvite, SmartRecruiters | Not supported yet. Their forms run over several pages. The tool skips these jobs when it finds jobs. |
 | Workday, iCIMS, Taleo, Oracle, SuccessFactors, Amazon, LinkedIn, and any site that needs a sign-in | Not supported yet. The tool skips these jobs. If it meets a sign-in page during a run, it remembers that site and skips it next time. See [What is planned](#what-is-planned). |
 
@@ -221,7 +225,9 @@ date. It ranks the job lower and leaves the choice to you.
 - long lists that load as you type, such as schools and cities
 - Yes and No buttons, and other button groups
 - single-choice options and groups of checkboxes
-- the resume upload
+- the resume upload. A box that asks for another file, such as a
+  transcript, never gets the resume. It gets your transcript if you added
+  one to your profile, and otherwise the form is held
 - dates, and dates split into a month box and a year box
 - phone numbers with a country picker
 - consent boxes

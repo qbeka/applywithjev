@@ -23,7 +23,14 @@ doctor` says what is in place and what to do next.
 - **Verify, then submit.** A value is real when it has been read back from
   the page. A form is submitted only when it is `ready`, and an application
   counts only when the page after the click is a confirmation. Never weaken
-  `isReady` or the submit guard to make a form go through.
+  `isReady` or the submit guard to make a form go through. One case is
+  allowed on purpose (`splitFailures`): an optional field the tool could not
+  set, which the page shows empty, is reported as left blank and does not
+  hold the form. A required field, a field showing another value, and the
+  resume always hold it.
+- **The right file in the right box.** A file box gets the resume only when
+  it asks for the resume (`fileBoxWants`). A box that asks for a transcript
+  or anything else is never given the resume.
 - **Never type into a login.** A page with a password box is blocked. The
   tool creates no accounts and solves no CAPTCHAs.
 - **No secrets in code or logs.** The OpenRouter key is read from `.env` by

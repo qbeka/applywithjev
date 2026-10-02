@@ -30,7 +30,8 @@
         const want = norm(f.value);
         const btn = buttons.find((b) => norm(b.innerText || b.textContent) === want) || buttons.find((b) => norm(b.innerText || b.textContent).includes(want));
         if (!btn) { report.failed.push({ selector: f.selector, why: "button option not found: " + f.value }); continue; }
-        btn.click();
+        // A row drawn around a real radio or checkbox: the box is what the form listens to.
+        (btn.querySelector("input[type=radio], input[type=checkbox]") || btn).click();
       } else if (f.kind === "radio") {
         const name = el.name;
         const group = name ? document.querySelectorAll(`input[type=radio][name="${attr(name)}"]`) : [el];

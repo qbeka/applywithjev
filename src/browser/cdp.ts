@@ -133,7 +133,12 @@ export class Page {
   private onNetwork(method: string, params: Record<string, unknown>): void {
     if (method === "Page.frameNavigated") {
       const frame = params.frame as { parentId?: string; url: string };
-      if (!frame.parentId) this.mainUrl = frame.url;
+      if (!frame.parentId) {
+        this.mainUrl = frame.url;
+        // A new page: what the last one was still sending will never be answered, and is not this form's business.
+        this.inflight.clear();
+        this.writes.clear();
+      }
       return;
     }
     const id = params.requestId as string | undefined;
@@ -244,10 +249,17 @@ export class Page {
 
   /** Puts local files on a file input, the way a user's file picker would. */
   async setFiles(selector: string, files: string[]): Promise<boolean> {
-    const doc = await this.send<{ root: { nodeId: number } }>("DOM.getDocument", { depth: 0 });
-    const found = await this.send<{ nodeId: number }>("DOM.querySelector", { nodeId: doc.root.nodeId, selector });
-    if (!found.nodeId) return false;
-    await this.send("DOM.setFileInputFiles", { nodeId: found.nodeId, files });
+    // The input is found the same way every other control is: in the page as it is now. The DOM domain's
+    // own document can lag behind after the tab has moved from a careers page to the board's form.
+    const root = await this.send<{ result: { objectId: string } }>("Runtime.evaluate", { expression: "globalThis" });
+    const found = await this.send<{ result: { objectId?: string; subtype?: string } }>("Runtime.callFunctionOn", {
+      functionDeclaration: "function (s) { return document.querySelector(s); }",
+      objectId: root.result.objectId,
+      arguments: [{ value: selector }],
+      returnByValue: false,
+    });
+    if (!found.result.objectId || found.result.subtype === "null") return false;
+    await this.send("DOM.setFileInputFiles", { objectId: found.result.objectId, files });
     return true;
   }
 

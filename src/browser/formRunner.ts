@@ -22,10 +22,10 @@ const script = (name: string) => readFileSync(path.join(PATHS.browserScripts, na
 const SESSION = path.join(PATHS.runs, "browser-session.json");
 
 /** The text of a button that leads from a posting to its form. */
-const APPLY_BUTTON = "^\\s*(apply|apply now|apply for this job|apply to this job|apply for this position|start application|i'm interested)\\s*$";
+const APPLY_BUTTON = "^\\s*(apply|apply now|apply for this job|apply to this job|apply for this position|start application|i'm interested)\\s*[»›→>]*\\s*$";
 
 type Session = Record<string, { targetId: string; url: string }>;
-type Point = { x: number; y: number; ok: boolean };
+type Point = { x: number; y: number; ok: boolean; href?: string };
 export type Fill = { selector: string; kind: string; value: string };
 export type FieldReport = { label: string; required: boolean; action: string; shown: string; note: string | null };
 export type FillReport = {
@@ -40,6 +40,8 @@ export type FillReport = {
   drafts: FillPlan["drafts"];
   reviews: FillPlan["reviews"];
   failed: { selector: string; label: string; why: string }[];
+  /** Optional fields the tool wanted to answer, could not, and left empty. They do not hold the form. */
+  leftBlank: { selector: string; label: string; why: string }[];
   missingRequired: string[];
   /** True when nothing is left open: every wanted value is on the page and no required field is empty. Only a ready form may be submitted. */
   ready: boolean;
@@ -48,6 +50,8 @@ export type FillReport = {
   /** How many of those answers came from the answer memory, and whether Claude had to be asked at all. */
   recalled?: number;
   writerCalled?: boolean;
+  /** True when the page has a Next or Continue button and no Submit: the form goes on to pages the tool cannot fill yet. */
+  multiPage?: boolean;
   seconds: number;
   jevCostUsd: number;
 };
@@ -74,7 +78,40 @@ function emptyRequiredFields(d: FieldsDump, plan: FillPlan, shown: string[], sta
 }
 const emptyRequired = (d: FieldsDump, plan: FillPlan, shown: string[], states: ControlState[]) => emptyRequiredFields(d, plan, shown, states).map((f) => f.label);
 
-const isReady = (r: Pick<FillReport, "state" | "drafts" | "reviews" | "failed" | "missingRequired">) => r.state === "filled" && !r.drafts.length && !r.reviews.length && !r.failed.length && !r.missingRequired.length;
+const isReady = (r: Pick<FillReport, "state" | "drafts" | "reviews" | "failed" | "missingRequired" | "multiPage">) => r.state === "filled" && !r.multiPage && !r.drafts.length && !r.reviews.length && !r.failed.length && !r.missingRequired.length;
+
+export const MULTI_PAGE_REASON = "this form continues on another page, which the tool cannot fill yet";
+
+/** The control that sends the form, from the buttons the dump found. English first, then the French a bilingual Canadian form uses. */
+export function pickSubmit(submitSelectors: string[]): { selector: string; text: string } | null {
+  const candidates = submitSelectors.map((s) => ({ selector: s.split("  /*")[0] ?? s, text: /\/\*\s*(.*?)\s*\*\//.exec(s)?.[1] ?? "" }));
+  return candidates.find((c) => /submit|soumettre/i.test(c.text)) ?? candidates.find((c) => /apply|send|finish|postuler|envoyer/i.test(c.text) && !/linkedin|indeed/i.test(c.text)) ?? null;
+}
+
+/** A form with a way onward and no way to send is one page of several. */
+export const continuesOnAnotherPage = (submitSelectors: string[]) => !pickSubmit(submitSelectors) && submitSelectors.some((s) => /\/\*\s*(next|continue|save and continue|save & continue)\b/i.test(s));
+
+type Failure = { selector: string; why: string };
+
+/**
+ * Sorts what did not land into what holds the form and what does not. An optional field that the
+ * page shows empty is simply unanswered, which is true and harmless, so it is recorded and the form
+ * goes on. Everything else holds the form: a required field, a field that shows some other value,
+ * the resume, a field the plan does not know, and a save the form's own server refused.
+ */
+export function splitFailures(plan: Pick<FillPlan, "fields">, failed: Failure[], shown: string[]): { holds: Failure[]; leftBlank: Failure[] } {
+  const holds: Failure[] = [];
+  const leftBlank: Failure[] = [];
+  for (const given of failed) {
+    const i = plan.fields.findIndex((p) => p.selector === given.selector);
+    const field = plan.fields[i];
+    // A pay box that refuses words wants a number, and the profile gives none: say so instead of "did not land".
+    const f = field && /salary|compensation|pay\b/i.test(field.label) && /did not keep|not confirmed/.test(given.why) ? { ...given, why: "the pay box takes only a number, and your profile gives no pay figure" } : given;
+    const harmless = !!field && !field.required && !shown[i] && field.action !== "upload" && field.kind !== "file" && !/refused/.test(f.why);
+    (harmless ? leftBlank : holds).push(f);
+  }
+  return { holds, leftBlank };
+}
 
 const loadSession = (): Session => (existsSync(SESSION) ? (JSON.parse(readFileSync(SESSION, "utf8")) as Session) : {});
 const saveSession = (s: Session) => {
@@ -133,9 +170,14 @@ async function openForm(page: Page, job: Job): Promise<FieldsDump> {
     } else {
       const p = await page.awj<Point>("clickByText", APPLY_BUTTON);
       if (!p.ok) break;
-      await page.click(p.x, p.y);
-      await settle(page);
-      await install(page);
+      if (p.href) {
+        // A link is followed in this tab. Clicking one that opens a new tab would leave the runner looking at the old page.
+        await goto(page, p.href);
+      } else {
+        await page.click(p.x, p.y);
+        await settle(page);
+        await install(page);
+      }
     }
     d = await dump(page);
   }
@@ -320,6 +362,8 @@ async function clickAndPick(page: Page, selector: string, value: string, hints: 
     const attempts = head && head !== value ? [head, value] : [value, value.split(/\s+/)[0] ?? ""];
     for (const typed of [...new Set(attempts)]) {
       if (!typed) continue;
+      // Keys go wherever the focus is. A click that did not put it in this box (the window was still coming to the front) is made good here.
+      if (!(await page.awj<boolean>("hasFocus", selector)) && !(await page.awj<boolean>("focus", selector))) break;
       await page.type(typed);
       // The first word only widens the search. The pick still has to match the whole value.
       opts = await waitOptions(page, selector, true, (seen) => pickOption(seen, value, hints) !== null);
@@ -413,7 +457,7 @@ export async function applyFills(page: Page, fills: Fill[], profile: Profile): P
     }
     if (shown[i] || failed.some((x) => x.selector === f.selector)) continue;
     if (f.kind === "checkbox" && !/^(true|yes|1|on|checked)$/i.test(f.value)) continue;
-    const why = f.kind === "combobox" ? await fillDropdownByClicking(page, f.selector, f.value, hints) : TYPED_KINDS.has(f.kind) ? await typeInto(page, f.selector, f.value) : "the page did not keep the value";
+    const why = f.kind === "combobox" ? await fillDropdownByClicking(page, f.selector, f.value, hints) : TYPED_KINDS.has(f.kind) ? await typeInto(page, f.selector, f.value) : f.kind === "radio" ? await clickGroupOption(page, f.selector, f.value) : "the page did not keep the value";
     const after = (await shownValues(page, [f.selector]))[0];
     if (why || !after) failed.push({ selector: f.selector, why: why ?? "the page did not keep the value" });
   }
@@ -441,7 +485,21 @@ function typeInto(page: Page, selector: string, value: string): Promise<string |
     if (!(await page.awj<boolean>("hasFocus", selector))) return "could not focus the control";
     await page.evaluate("window.__awj.selectAll()");
     await page.type(value);
+    // Leave the box the way a person does. Some phone boxes throw away what was typed when focus is taken from them by script.
+    await page.key("Tab");
+    await sleep(BROWSER.pollMs);
     await page.evaluate("window.__awj.blur()");
+    return null;
+  });
+}
+
+/** Picks a choice in a button group or a drawn radio row with a real click, for the group that ignores a click made from script. */
+function clickGroupOption(page: Page, selector: string, value: string): Promise<string | null> {
+  return inFront(page, async () => {
+    const p = await page.awj<Point>("groupOptionPoint", selector, value);
+    if (!p.ok) return "the page did not keep the value";
+    await page.click(p.x, p.y);
+    await sleep(BROWSER.pollMs);
     return null;
   });
 }
@@ -481,11 +539,11 @@ export async function fillJob(jev: JevClient, profile: Profile, job: Job): Promi
     }
     if (d.hasPassword) {
       // A password box means a login or account page. Nothing is typed into it.
-      return done({ ...base, url: d.url, state: "blocked", reason: "login or account required", fields: [], drafts: [], reviews: [], failed: [], missingRequired: [], seconds: (Date.now() - started) / 1000, jevCostUsd: 0 });
+      return done({ ...base, url: d.url, state: "blocked", reason: "login or account required", fields: [], drafts: [], reviews: [], failed: [], leftBlank: [], missingRequired: [], seconds: (Date.now() - started) / 1000, jevCostUsd: 0 });
     }
     if (!isApplicationForm(d)) {
       const state = await decidePageState(jev, await page.evaluate<string>("window.__awj.pageText()"), d.url, job.id);
-      return done({ ...base, url: d.url, state: "blocked", reason: `no form found, page looks like: ${state.state}`, fields: [], drafts: [], reviews: [], failed: [], missingRequired: [], seconds: (Date.now() - started) / 1000, jevCostUsd: 0 });
+      return done({ ...base, url: d.url, state: "blocked", reason: `no form found, page looks like: ${state.state}`, fields: [], drafts: [], reviews: [], failed: [], leftBlank: [], missingRequired: [], seconds: (Date.now() - started) / 1000, jevCostUsd: 0 });
     }
     await readDropdownOptions(page, d.fields);
     trace(`${job.company}: options read ${Date.now() - started}ms`);
@@ -513,7 +571,8 @@ export async function fillJob(jev: JevClient, profile: Profile, job: Job): Promi
     }
     failedRaw = [...(await secondLook(page, jev, profile, job, d, plan, failedRaw)), ...uploadFailures];
     writeFileSync(planFile(job.id), JSON.stringify({ dump: d, plan }, null, 2));
-    return done({ ...base, ...(await report(page, d, plan, failedRaw, uploaded)), seconds: (Date.now() - started) / 1000, jevCostUsd: plan.jevCostUsd });
+    const multiPage = continuesOnAnotherPage(plan.submitSelectors);
+    return done({ ...base, ...(await report(page, d, plan, failedRaw, uploaded)), ...(multiPage ? { multiPage, reason: MULTI_PAGE_REASON } : {}), seconds: (Date.now() - started) / 1000, jevCostUsd: plan.jevCostUsd });
   } finally {
     page.close();
   }
@@ -611,7 +670,7 @@ async function waitForFile(page: Page, name: string): Promise<boolean> {
   return false;
 }
 
-async function report(page: Page, d: FieldsDump, plan: FillPlan, failedRaw: { selector: string; why: string }[], uploaded = new Set<string>()): Promise<Pick<FillReport, "url" | "state" | "reason" | "fields" | "drafts" | "reviews" | "failed" | "missingRequired">> {
+async function report(page: Page, d: FieldsDump, plan: FillPlan, failedRaw: { selector: string; why: string }[], uploaded = new Set<string>()): Promise<Pick<FillReport, "url" | "state" | "reason" | "fields" | "drafts" | "reviews" | "failed" | "leftBlank" | "missingRequired">> {
   const shown = await shownValues(page, plan.fields.map((f) => f.selector));
   const fields = plan.fields.map((f, i) => ({ label: f.label, required: f.required, action: f.action, shown: uploaded.has(f.selector) ? path.basename(f.value ?? "") : shown[i] ?? "", note: f.note }));
   const labelOf = (selector: string) => plan.fields.find((f) => f.selector === selector)?.label ?? selector;
@@ -623,6 +682,7 @@ async function report(page: Page, d: FieldsDump, plan: FillPlan, failedRaw: { se
       failed.push({ selector: f.selector, why: states[i] === "missing" ? "the control is no longer on the page" : "the value is not confirmed on the page" });
     }
   });
+  const { holds, leftBlank } = splitFailures(plan, failed, fields.map((f) => f.shown));
   return {
     url: plan.url,
     state: "filled",
@@ -630,7 +690,8 @@ async function report(page: Page, d: FieldsDump, plan: FillPlan, failedRaw: { se
     fields,
     drafts: plan.drafts,
     reviews: plan.reviews,
-    failed: failed.map((f) => ({ ...f, label: labelOf(f.selector) })),
+    failed: holds.map((f) => ({ ...f, label: labelOf(f.selector) })),
+    leftBlank: leftBlank.map((f) => ({ ...f, label: labelOf(f.selector) })),
     missingRequired: emptyRequired(d, plan, fields.map((f) => f.shown), states),
   };
 }
@@ -641,7 +702,8 @@ async function report(page: Page, d: FieldsDump, plan: FillPlan, failedRaw: { se
  */
 export async function resolveJob(profile: Profile, entry: QueueEntry | null, jobId: string, opts: { jev?: JevClient; fresh?: boolean } = {}): Promise<FillReport> {
   const r = loadReport(jobId);
-  if (r.state !== "filled" || r.ready) return r;
+  // A form that goes on to pages the tool cannot fill is not worth a writer call.
+  if (r.state !== "filled" || r.ready || r.multiPage) return r;
   const { dump: d, plan } = JSON.parse(readFileSync(planFile(jobId), "utf8")) as { dump: FieldsDump; plan: FillPlan };
   const page = await pageFor(jobId);
   try {
@@ -659,7 +721,7 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
       if (o && !o.options.length && x.options.length) o.options = x.options;
     }
     // A file that did not upload is not something Claude can answer; it stays a failure.
-    for (const x of r.failed) if (dumped(x.selector)?.kind !== "file") add(x.selector, x.why);
+    for (const x of [...r.failed, ...(r.leftBlank ?? [])]) if (dumped(x.selector)?.kind !== "file") add(x.selector, x.why);
     const before = await shownValues(page, plan.fields.map((f) => f.selector));
     const statesBefore = await controlStates(page, plan.fields.map((f) => f.selector));
     for (const f of emptyRequiredFields(d, plan, before, statesBefore)) add(f.selector, "required and still empty");
@@ -718,17 +780,23 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
       const landed = (selector: string) => !!after[plan.fields.findIndex((f) => f.selector === selector)];
       saveMemory(remember(loadMemory(), { jobId, company, fingerprint, open: openFields, resolution, landed, recalled: new Set(recalled.keys()) }));
     }
+    const { holds, leftBlank } = splitFailures(
+      plan,
+      [
+        ...failedRaw,
+        // Anything the plan or Claude wanted in the form that the page does not show.
+        ...plan.fields.filter((f, i) => (f.action === "fill" || f.action === "upload" || fills.some((x) => x.selector === f.selector)) && !fields[i]?.shown && states[i] !== "off" && !failedRaw.some((x) => x.selector === f.selector)).map((f) => ({ selector: f.selector, why: "the value is not confirmed on the page" })),
+      ],
+      fields.map((f) => f.shown),
+    );
     const next: Omit<FillReport, "ready"> = {
       ...r,
       fields,
       drafts: plan.drafts.filter((x) => !after[plan.fields.findIndex((f) => f.selector === x.selector)]),
       // An open field Claude chose to leave blank is settled, unless it is still a required field with nothing in it.
       reviews: plan.reviews.filter((x) => stillRequired.has(x.selector)),
-      failed: [
-        ...failedRaw,
-        // Anything the plan or Claude wanted in the form that the page does not show.
-        ...plan.fields.filter((f, i) => (f.action === "fill" || f.action === "upload" || fills.some((x) => x.selector === f.selector)) && !fields[i]?.shown && states[i] !== "off" && !failedRaw.some((x) => x.selector === f.selector)).map((f) => ({ selector: f.selector, why: "the value is not confirmed on the page" })),
-      ].map((f) => ({ ...f, label: labelOf(f.selector) })),
+      failed: holds.map((f) => ({ ...f, label: labelOf(f.selector) })),
+      leftBlank: leftBlank.map((f) => ({ ...f, label: labelOf(f.selector) })),
       missingRequired: emptyRequired(d, plan, fields.map((f) => f.shown), states),
       resolution,
       recalled: recalled.size,
@@ -771,9 +839,7 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
   const page = await pageFor(jobId);
   try {
     const { dump: d, plan } = JSON.parse(readFileSync(planFile(jobId), "utf8")) as { dump: FieldsDump; plan: FillPlan };
-    const candidates = plan.submitSelectors.map((s) => ({ selector: s.split("  /*")[0] ?? s, text: /\/\*\s*(.*?)\s*\*\//.exec(s)?.[1] ?? "" }));
-    // English first, then the French a bilingual Canadian form uses ("Soumettre la candidature", "Postuler").
-    const pick = candidates.find((c) => /submit|soumettre/i.test(c.text)) ?? candidates.find((c) => /apply|send|finish|postuler|envoyer/i.test(c.text) && !/linkedin|indeed/i.test(c.text));
+    const pick = pickSubmit(plan.submitSelectors);
     if (!pick) throw new Error("No submit control in the plan.");
     if (!force) {
       // The report says ready, but the page is what gets submitted: read the required fields once more.
@@ -781,12 +847,14 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
       const empty = emptyRequired(d, plan, await shownValues(page, selectors), await controlStates(page, selectors)).map((l) => l.slice(0, 50));
       if (empty.length) throw new Error(`not ready to submit, required fields are empty on the page: ${empty.join("; ")}`);
     }
-    await page.bringToFront();
     await page.writesSettled(BROWSER.saveMs);
     const before = await page.evaluate<string>("window.__awj.pageText()");
-    const p = await page.awj<Point>("point", pick.selector);
-    if (!p.ok) throw new Error(`Submit control ${pick.selector} is not on the page.`);
-    await page.click(p.x, p.y);
+    // Other forms may be filling in their own tabs. The click takes its turn for the front of the window.
+    await inFront(page, async () => {
+      const p = await page.awj<Point>("point", pick.selector);
+      if (!p.ok) throw new Error(`Submit control ${pick.selector} is not on the page.`);
+      await page.click(p.x, p.y);
+    });
     const deadline = Date.now() + BROWSER.submitMs;
     let after = before;
     while (Date.now() < deadline) {

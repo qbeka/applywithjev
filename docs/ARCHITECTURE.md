@@ -54,7 +54,15 @@ Timing on 2026-10-02: 4,748 unique postings, 478 rated, 61 seconds, $0.075.
 
 ## Apply loop (`src/browser/formRunner.ts`, `apply` in `src/cli.ts`)
 
-Per job, in the runner's own Chrome window, several forms side by side:
+Each job moves on its own through three steps, and nothing waits for the
+batch (`pipeline` in `src/cli.ts`, pacing in `src/util/pace.ts`). Fills run
+`RUN.fillConcurrency` at once, paced per site. The moment a fill ends, its
+form goes to the writer, `RUN.writerConcurrency` at once. The moment a form
+is ready, it is submitted: one click at a time, with `RUN.submitGapMs`
+between two submissions to the same site. Each result is printed and
+recorded when it happens.
+
+Per job, in the runner's own Chrome window:
 
 ```
 fillJob
@@ -120,7 +128,10 @@ and a count of the page's own writes (POST, PUT, PATCH) with any that failed.
    once, then fails the form.
 4. A form is `ready` only with no draft, review or failure left and no
    required field empty. `submit` refuses anything else and re-reads the
-   required fields first.
+   required fields first. An optional field that could not be set and that
+   the page shows empty is not a failure: it is listed as left blank
+   (`splitFailures`). A form with a Next button and no Submit is one page of
+   several and is never ready.
 5. After the click, JEV classifies the page. Only `submitted` is recorded as
    applied. Validation errors, a CAPTCHA or a login are recorded as they are.
 
