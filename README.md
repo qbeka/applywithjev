@@ -219,10 +219,11 @@ date. It ranks the job lower and leaves the choice to you.
 
 | Job board | What to expect |
 |---|---|
-| Greenhouse | Works well, until Greenhouse asks for proof that a person is applying. After several applications in a short time it emails you a code on every form. The tool leaves the first such form open for you and keeps the rest of that day's Greenhouse jobs in the queue. See [Codes that a board emails you](#codes-that-a-board-emails-you). |
+| Greenhouse | Works well, until Greenhouse asks for proof that a person is applying. After several applications in a short time it emails you a code on every form. The tool leaves the first such form open for you and keeps the rest of that day's Greenhouse jobs in the queue. See [Codes and checks that are yours](#codes-and-checks-that-are-yours). |
 | Ashby | Works well. Ashby saves each field as you type, so the tool fills these forms one field at a time, and one form at a time. |
 | Lever | Works well. |
-| Rippling, Workable, BambooHR | Works. Tested on a few forms each. |
+| Rippling, Workable | Works. Tested on a few forms each. |
+| BambooHR | Works, up to its "confirm you are not a robot" check after Submit. The tool fills the form, clicks Submit, and leaves the form open for you to pass the check. See [Codes and checks that are yours](#codes-and-checks-that-are-yours). |
 | Jobvite, Tesla, and other forms that run over several pages | Works. The tool fills a page, checks it, clicks the form's own Next, and fills the next page, up to 8 pages. |
 | SmartRecruiters | Not supported yet. The tool cannot read its form. It skips these jobs. |
 | Workday, iCIMS, Taleo, Oracle, SuccessFactors, Amazon, LinkedIn, and any site that wants a sign-in | The tool does not sign in anywhere. It skips these jobs. If it meets a sign-in page during a run, it closes the page, puts the job on your by-hand list, and skips that site from then on. |
@@ -328,28 +329,31 @@ Greenhouse asked for a code on 7 of 13 forms sent within a few minutes.
    npx tsx src/cli.ts log
    ```
 
-Stay at your computer while the tool runs. Some forms show a "prove you are
-human" test or email you a code. Only you can do those. Do them in the
-tool's Chrome window, then run `submit` for that job again.
+Stay near your computer while the tool runs. Some forms show a "prove you
+are not a robot" test or email you a code. Only you can do those.
 
-### Codes that a board emails you
+### Codes and checks that are yours
 
 After several applications in a short time, Greenhouse asks for proof that
-a person is applying. It emails you an 8-character code and waits. The tool
-does not read that code and does not type it. That step is yours.
+a person is applying. It emails you an 8-character code and waits. BambooHR
+shows a "confirm you are not a robot" check after Submit. The tool does not
+read a code, does not type it, and does not pass a robot check. Those steps
+are yours.
 
-The tool makes it quick. Run:
+The tool makes them quick. Run:
 
 ```bash
 npx tsx src/cli.ts codes
 ```
 
 It brings each waiting form to the front, one at a time. You type the code
-from your email and click Submit. The tool sees the confirmation, records
-the application and moves to the next form. Each one takes a few seconds.
+from your email, or pass the check, and click Submit. The tool sees the
+confirmation, records the application and moves to the next form. Each one
+takes a few seconds.
 
-Once a site has asked for a code, the tool sends it nothing more that day.
-The site's other jobs stay in the queue, and a later run picks them up.
+Once a site has asked for a code or a check, the tool sends it nothing more
+that day. The site's other jobs stay in the queue, and a later run picks
+them up.
 
 ## Find your applications
 
@@ -525,7 +529,7 @@ Run each command as `npx tsx src/cli.ts <command>`.
 | `fill [ids] [--count N] [--dry]` | Fills the first page of each form and stops |
 | `resolve <ids>` | Answers what is still open on filled forms |
 | `submit <ids>` | Sends forms that are ready |
-| `codes` | Shows each form that is waiting for an emailed code, one at a time, and records it once you have sent it |
+| `codes` | Shows each form that is waiting for you (an emailed code, or a robot check), one at a time, and records it once you have sent it |
 | `check <ids>` | Reads what each form's tab shows now, without clicking, and records the job as applied if it is a confirmation |
 | `inspect <id>` | Shows what a filled form holds now, and any errors on the page |
 | `set <id> --values file.json` | Writes answers you chose into a filled form |

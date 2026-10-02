@@ -71,6 +71,16 @@ Keep a Changelog and the project uses Conventional Commits.
   day. Its jobs stay in the queue.
 - A cookie banner that lies over Submit is answered with its most private
   choice (necessary cookies only, or reject). The tool never accepts all.
+- A "confirm you are not a robot" check after Submit (BambooHR) is left
+  for the person like an emailed code: the form stays open, `codes` shows
+  it, and the site's other jobs wait for another day.
+- Pickers drawn as a button that opens a searchable menu (BambooHR's State
+  and Country) and read-only comboboxes (Workable's pickers) are filled.
+- A text box that names a date format in its placeholder (MM/DD/YYYY) gets
+  the date written that way.
+- A typed box or a dropdown must show the value it was given, in whatever
+  shape the site writes it. A box that shows something else fails the fill
+  and holds the form, where before any non-empty box passed.
 - Site notes (`src/knowledge/sites.ts`, `knowledge` command): after every
   form the tool records how the site's controls took their values, whether
   it wants a sign-in, how many pages its form has and what it could not set,

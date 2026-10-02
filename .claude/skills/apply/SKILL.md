@@ -44,6 +44,7 @@ updated to match.
 | `READY`, then `submitted` | Sent. The confirmation page was read by JEV. | Nothing. |
 | `READY`, no `--submit` | Filled and verified, waiting. | After the user says go: `submit <id>`. |
 | `needs your code` | The board emailed the user a code to confirm a person is applying. The filled form stays open. | Tell the user to run `codes` in their own terminal. See below. |
+| `needs you to pass a robot check` | The site showed a "confirm you are not a robot" check after Submit (BambooHR). The filled form stays open. | The same: the user runs `codes`, passes the check, clicks Submit. |
 | `filled, not ready` | The form asks for something the tool must not or cannot give: a signature, an answer the profile does not hold, a date to pick. The reason is printed. | Nothing. In a sending run the tab is closed and the job is in `manual.csv`. |
 | `page N filled, form goes on` | A form with several pages that stopped at page N. The reason says why. | The same. |
 | `blocked` | No form could be opened: a sign-in page, an error page. | Nothing. A sign-in site is noted and skipped by later searches. |
