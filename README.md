@@ -513,7 +513,7 @@ Run each command as `npx tsx src/cli.ts <command>`.
 | Command | What it does |
 |---|---|
 | `doctor [--online]` | Checks your setup and names the next step |
-| `discover` | Finds and ranks jobs |
+| `discover [--max-age days]` | Finds and ranks jobs. `--max-age` also takes older postings, for one search |
 | `queue` | Lists the ranked jobs |
 | `apply [ids] [--count N] [--submit] [--dry] [--fresh]` | Fills each form, page by page, checks every answer and, with `--submit`, sends each form the moment it is ready. `--dry` is a rehearsal. `--fresh` ignores remembered answers |
 | `fill [ids] [--count N] [--dry]` | Fills the first page of each form and stops |

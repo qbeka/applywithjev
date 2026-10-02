@@ -148,6 +148,10 @@ describe("graduation window and account walls", () => {
   });
   it("skips careers sites that need an account and boards whose forms cannot be read", () => {
     expect(preFilter(job({ url: "https://acme.eightfold.ai/careers/job/1", ats: "other" }), now, () => true)).toMatch(/account/);
+    // An older posting passes when one search asks for more days.
+    const old = job({ postedAt: new Date(now.getTime() - 20 * 86_400_000).toISOString().slice(0, 10) });
+    expect(preFilter(old, now, () => false)).toMatch(/posted 20 days ago/);
+    expect(preFilter(old, now, () => false, { authorized: false, citizen: false }, 30)).toBeNull();
     // Jobvite's forms run over several pages, which the runner walks. SmartRecruiters' cannot be read yet.
     expect(preFilter(job({ ats: "jobvite" }), now, () => false)).toBeNull();
     expect(preFilter(job({ ats: "smartrecruiters" }), now, () => false)).toMatch(/cannot be read/);

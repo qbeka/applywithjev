@@ -33,7 +33,7 @@ export function locationTier(locations: string[]): LocationTier {
 }
 
 /** us: the candidate's standing in the United States. A candidate who may work there is not ruled out by "no sponsorship". */
-export function preFilter(job: Job, now = new Date(), walled: (url: string) => boolean = isWalled, us: { authorized: boolean; citizen: boolean } = { authorized: false, citizen: false }): string | null {
+export function preFilter(job: Job, now = new Date(), walled: (url: string) => boolean = isWalled, us: { authorized: boolean; citizen: boolean } = { authorized: false, citizen: false }, maxAgeDays: number = DISCOVER.maxAgeDays): string | null {
   if (job.ats === "workday") return "workday (needs an account per company)";
   if (job.ats === "taleo" || job.ats === "oracle" || job.ats === "successfactors" || job.ats === "icims" || job.ats === "amazon") {
     return `${job.ats} (needs an account)`;
@@ -41,7 +41,7 @@ export function preFilter(job: Job, now = new Date(), walled: (url: string) => b
   if (walled(job.url)) return "careers site needs an account";
   if ((DISCOVER.unreadableAts as readonly string[]).includes(job.ats)) return `${job.ats} (its form cannot be read yet)`;
   const age = ageDays(job, now);
-  if (age !== null && age > DISCOVER.maxAgeDays) return `posted ${age} days ago`;
+  if (age !== null && age > maxAgeDays) return `posted ${age} days ago`;
   if (NON_SOFTWARE_TITLE.test(job.title) && !SOFTWARE_TITLE.test(job.title)) {
     return "title is not a software role";
   }

@@ -40,6 +40,8 @@ export type DiscoverOptions = {
   now?: Date;
   /** The candidate's graduation year: a board title that names it is early-career. */
   gradYear?: number;
+  /** Consider postings up to this many days old, for one search. The default is DISCOVER.maxAgeDays. */
+  maxAgeDays?: number;
 };
 
 export type DiscoverSummary = {
@@ -118,7 +120,7 @@ export async function discover(profile: Profile, jev: JevClient, opts: DiscoverO
   const kept: Job[] = [];
   const entries: QueueEntry[] = [];
   for (const job of all) {
-    const reason = preFilter(job, now, (url) => isWalled(url, learned), us);
+    const reason = preFilter(job, now, (url) => isWalled(url, learned), us, opts.maxAgeDays);
     if (reason) entries.push(entryFor(job, null, reason, prevById.get(job.id)));
     else kept.push(job);
   }
