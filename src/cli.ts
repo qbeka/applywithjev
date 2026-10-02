@@ -14,7 +14,7 @@ import { JevClient } from "./jev/client.js";
 import { applyUrlFor } from "./jobs/normalize.js";
 import { loadQueue, nextQueued, saveQueue, sortEntries, updateEntry, QueueStatus, type QueueEntry } from "./jobs/queue.js";
 import { appliedRecords, loadRows, saveRows, toRecord, upsertEntry } from "./log/csv.js";
-import { loadProfile } from "./profile/schema.js";
+import { loadProfile, type Profile } from "./profile/schema.js";
 import { answerContext } from "./answers/context.js";
 import { mapForm } from "./forms/mapForm.js";
 import { decidePageState } from "./forms/pageState.js";
@@ -27,6 +27,7 @@ import { contextFingerprint, logNotes } from "./answers/resolve.js";
 import { loadMemory, prune, saveMemory } from "./answers/memory.js";
 import { formatCost, loadCost } from "./log/cost.js";
 import { formatChecks, isReadyToRun, nextStep, runChecks } from "./doctor.js";
+import { limiter, paced, spacer } from "./util/pace.js";
 
 loadEnv();
 const program = new Command();
@@ -161,31 +162,28 @@ function takeJobs(ids: string[], o: RunOptions): QueueEntry[] {
   return entries;
 }
 
-/** Fills every entry's form, side by side but never in a burst at one site. A form that cannot be opened comes back as blocked. */
-async function fillAll(entries: QueueEntry[]): Promise<FillReport[]> {
-  const profile = loadProfile();
-  const jev = new JevClient();
-  await ensureBrowser();
-  return paced(entries, (e) => hostOf(applyUrlFor(e.job as unknown as Job)), async (e) => {
-    let timer: NodeJS.Timeout | undefined;
-    try {
-      const tooLong = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`the form did not finish loading and filling in ${RUN.fillTimeoutMs / 1000}s`)), RUN.fillTimeoutMs);
-      });
-      const filling = fillJob(jev, profile, e.job as unknown as Job);
-      // If the time runs out, the fill is abandoned: its tab is closed below, and whatever it does afterwards is ignored.
-      filling.catch(() => undefined);
-      return await Promise.race([filling, tooLong]);
-    } catch (err) {
-      if (err instanceof Error && /did not finish loading/.test(err.message)) {
-        abandoned = true;
-        await closeJobTab(e.job.id).catch(() => undefined);
-      }
-      return { jobId: e.job.id, company: e.job.company, title: e.job.title, ats: e.job.ats, url: e.job.url, state: "blocked", reason: err instanceof Error ? err.message : String(err), fields: [], drafts: [], reviews: [], failed: [], missingRequired: [], ready: false, seconds: 0, jevCostUsd: 0 };
-    } finally {
-      clearTimeout(timer);
+const blockedReport = (e: QueueEntry, reason: string): FillReport => ({ jobId: e.job.id, company: e.job.company, title: e.job.title, ats: e.job.ats, url: e.job.url, state: "blocked", reason, fields: [], drafts: [], reviews: [], failed: [], leftBlank: [], missingRequired: [], ready: false, seconds: 0, jevCostUsd: 0 });
+
+/** Fills one form, within RUN.fillTimeoutMs. A form that cannot be opened, or never settles, comes back as blocked. */
+async function fillOne(jev: JevClient, profile: Profile, e: QueueEntry): Promise<FillReport> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const tooLong = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`the form did not finish loading and filling in ${RUN.fillTimeoutMs / 1000}s`)), RUN.fillTimeoutMs);
+    });
+    const filling = fillJob(jev, profile, e.job as unknown as Job);
+    // If the time runs out, the fill is abandoned: its tab is closed below, and whatever it does afterwards is ignored.
+    filling.catch(() => undefined);
+    return await Promise.race([filling, tooLong]);
+  } catch (err) {
+    if (err instanceof Error && /did not finish loading/.test(err.message)) {
+      abandoned = true;
+      await closeJobTab(e.job.id).catch(() => undefined);
     }
-  });
+    return blockedReport(e, err instanceof Error ? err.message : String(err));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Set when a fill was abandoned. Its page connection may still be open, so the command ends the process itself when it is done. */
@@ -194,28 +192,62 @@ const endIfAbandoned = () => {
   if (abandoned) process.exit(process.exitCode ?? 0);
 };
 
+/** Settles what JEV left open on one form: from the answer memory, or by Claude. A writer error leaves the form as it was, not ready. */
+async function resolveOne(jev: JevClient, profile: Profile, entry: QueueEntry | null, r: FillReport, fresh: boolean): Promise<FillReport> {
+  if (r.state !== "filled" || r.ready) return r;
+  try {
+    return await resolveJob(profile, entry, r.jobId, { jev, fresh });
+  } catch (err) {
+    return { ...r, reason: `writer: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+type PipelineOptions = { submit: boolean; dry: boolean; fresh: boolean; quiet: boolean; fillOnly?: boolean };
+
 /**
- * Settles what JEV left open, a few forms at a time: from the answer memory where the question was
- * answered before, from Claude otherwise. A writer error leaves the form as it was, not ready.
+ * Each job moves on its own through fill, resolve and submit. Nothing waits for the batch: a form
+ * is sent the moment it is ready, and its result is printed and recorded then. Fills run side by
+ * side and paced per site, the writer takes a few forms at a time, and submissions go one at a time.
  */
-async function resolveAll(reports: FillReport[], fresh = false): Promise<FillReport[]> {
+async function pipeline(entries: QueueEntry[], o: PipelineOptions): Promise<{ reports: FillReport[]; sent: string[] }> {
   const profile = loadProfile();
   const jev = new JevClient();
-  const q = loadQueue();
-  const out = [...reports];
-  const todo = reports.map((r, i) => ({ r, i })).filter(({ r }) => r.state === "filled" && !r.ready);
-  for (let at = 0; at < todo.length; at += RUN.writerConcurrency) {
-    await Promise.all(
-      todo.slice(at, at + RUN.writerConcurrency).map(async ({ r, i }) => {
-        try {
-          out[i] = await resolveJob(profile, q.entries.find((e) => e.job.id === r.jobId) ?? null, r.jobId, { jev, fresh });
-        } catch (err) {
-          out[i] = { ...r, reason: `writer: ${err instanceof Error ? err.message : String(err)}` };
+  await ensureBrowser();
+  const writer = limiter(RUN.writerConcurrency);
+  const reports = new Array<FillReport>(entries.length);
+  const sent: string[] = [];
+  const after: Promise<void>[] = [];
+  await paced(entries, (e) => hostOf(applyUrlFor(e.job as unknown as Job)), async (e) => {
+    const filled = await fillOne(jev, profile, e);
+    const index = entries.indexOf(e);
+    reports[index] = filled;
+    // The rest of this job's path does not hold a fill slot: the next form starts filling now.
+    after.push(
+      (async () => {
+        const r = o.fillOnly ? filled : await writer(() => resolveOne(jev, profile, e, filled, o.fresh));
+        reports[index] = r;
+        if (!o.quiet) printFill(r);
+        if (o.dry) return closeJobTab(r.jobId);
+        if (o.fillOnly) return;
+        if (r.state === "blocked") {
+          const rec = record(r.jobId, "blocked", r.reason);
+          // A login page teaches the next discover to skip that careers site.
+          if (/login or account|no form found, page looks like: (login_required|job_description)/.test(r.reason ?? "")) rememberWalledHost(rec.job.url);
+          await closeJobTab(r.jobId);
+        } else if (r.resolution?.verdict === "skip" || r.multiPage) {
+          record(r.jobId, "skipped", r.multiPage ? "form runs over several pages, not supported yet" : (r.resolution?.reason ?? ""));
+          await closeJobTab(r.jobId);
+        } else if (!r.ready) {
+          record(r.jobId, "needs_review", notReady(r));
+        } else if (o.submit) {
+          if (await submitAndRecord(jev, r.jobId, false)) sent.push(r.jobId);
         }
-      }),
+      })().catch((err) => console.log(`${e.job.id}  ${err instanceof Error ? err.message : String(err)}`)),
     );
-  }
-  return out;
+    return filled;
+  });
+  await Promise.all(after);
+  return { reports, sent };
 }
 
 /** Records an outcome in the queue and the CSV. */
@@ -234,10 +266,8 @@ program
   .option("--dry", "a rehearsal: leave the queue untouched and close each tab once it is filled")
   .option("--json")
   .action(async (ids: string[], o: RunOptions) => {
-    const reports = await fillAll(takeJobs(ids, o));
-    if (o.dry) for (const r of reports) await closeJobTab(r.jobId);
+    const { reports } = await pipeline(takeJobs(ids, o), { submit: false, dry: !!o.dry, fresh: false, quiet: !!o.json, fillOnly: true });
     if (o.json) console.log(JSON.stringify(reports, null, 2));
-    else reports.forEach(printFill);
     endIfAbandoned();
   });
 
@@ -246,7 +276,11 @@ program
   .description("Settle the fields JEV left open on filled forms: from the answer memory, or by Claude (Sonnet 5.5, high effort). Write the answers in and verify them")
   .option("--fresh", "ignore the answer memory and ask Claude again")
   .action(async (ids: string[], o: { fresh?: boolean }) => {
-    (await resolveAll(ids.map(loadReport), !!o.fresh)).forEach(printFill);
+    const profile = loadProfile();
+    const jev = new JevClient();
+    const q = loadQueue();
+    const writer = limiter(RUN.writerConcurrency);
+    await Promise.all(ids.map((id) => writer(async () => printFill(await resolveOne(jev, profile, q.entries.find((e) => e.job.id === id) ?? null, loadReport(id), !!o.fresh)))));
   });
 
 program
@@ -259,35 +293,18 @@ program
   .option("--json")
   .action(async (ids: string[], o: RunOptions & { submit?: boolean }) => {
     const began = new Date().toISOString();
-    const reports = await resolveAll(await fillAll(takeJobs(ids, o)), !!o.fresh);
+    const { reports, sent } = await pipeline(takeJobs(ids, o), { submit: !!o.submit, dry: !!o.dry, fresh: !!o.fresh, quiet: !!o.json });
     if (o.json) console.log(JSON.stringify(reports, null, 2));
-    else reports.forEach(printFill);
     if (o.dry) {
-      for (const r of reports) await closeJobTab(r.jobId);
       if (!o.json) console.log(`\nCost of this run\n${formatCost(loadCost(began))}`);
       return endIfAbandoned();
-    }
-    const jev = new JevClient();
-    const sent: string[] = [];
-    for (const r of reports) {
-      if (r.state === "blocked") {
-        const e = record(r.jobId, "blocked", r.reason);
-        // A login page teaches the next discover to skip that careers site.
-        if (/login or account|no form found, page looks like: (login_required|job_description)/.test(r.reason ?? "")) rememberWalledHost(e.job.url);
-        await closeJobTab(r.jobId);
-      } else if (r.resolution?.verdict === "skip") {
-        record(r.jobId, "skipped", r.resolution.reason);
-        await closeJobTab(r.jobId);
-      } else if (!r.ready) {
-        record(r.jobId, "needs_review", notReady(r));
-      } else if (o.submit) {
-        if (await submitAndRecord(jev, r.jobId, false)) sent.push(r.jobId);
-      }
     }
     await noteApplied(sent);
     const done = reports.map((r) => loadQueue().entries.find((e) => e.job.id === r.jobId)).filter((e): e is QueueEntry => !!e);
     console.log(`\nCost of this run\n${formatCost(loadCost(began))}`);
     console.log(`\n${done.filter((e) => e.status === "applied").length} applied, ${done.filter((e) => e.status === "needs_review").length} need review, ${done.filter((e) => e.status === "blocked" || e.status === "skipped" || e.status === "failed").length} blocked, skipped or failed, ${done.filter((e) => e.status === "in_progress").length} filled and waiting for submit`);
+    const codes = done.filter((e) => e.status === "needs_review" && (e.statusReason ?? "").startsWith(CODE_PREFIX)).length;
+    if (codes) console.log(`${codes} form(s) are waiting for a code that was emailed to you. Type each one into its tab, click Submit, then run: check <job id>`);
     console.log(whereTheRecordIs());
     endIfAbandoned();
   });
@@ -506,17 +523,23 @@ const notReady = (r: FillReport) =>
     ? r.resolution.reason
     : [...r.missingRequired.map((l) => `empty: ${l.slice(0, 60)}`), ...r.failed.map((f) => `did not land: ${f.label.slice(0, 60)}`), ...r.reviews.map((x) => `unsure: ${x.label.slice(0, 60)}`), ...r.drafts.map((x) => `unwritten: ${x.label.slice(0, 60)}`)].join("; ") || (r.reason ?? "not verified");
 
-const CODE_REASON = (id: string) => `the board emailed you a code to confirm a person is applying. Type it into the open tab, click Submit, then run: check ${id}`;
-const lastSubmit = new Map<string, number>();
+const CODE_PREFIX = "the board emailed you a code";
+const CODE_REASON = (id: string) => `${CODE_PREFIX} to confirm a person is applying. Type it into the open tab, click Submit, then run: check ${id}`;
+/** Submissions to one site are spaced out, and only one form is being sent at any moment. A burst from one person reads as a robot. */
+const perSite = spacer(RUN.submitGapMs);
+const oneAtATime = limiter(1);
+const siteOf = (id: string) => {
+  try {
+    return hostOf(loadReport(id).url).split(".").slice(-2).join(".");
+  } catch {
+    return id;
+  }
+};
+const submitAndRecord = (jev: JevClient, id: string, force: boolean, keepOpen = false): Promise<boolean> => perSite(siteOf(id), () => oneAtATime(() => sendAndRecord(jev, id, force, keepOpen)));
 
 /** Submits one ready form and records what the page became: applied, or failed with what the page said. */
-async function submitAndRecord(jev: JevClient, id: string, force: boolean, keepOpen = false): Promise<boolean> {
+async function sendAndRecord(jev: JevClient, id: string, force: boolean, keepOpen = false): Promise<boolean> {
   try {
-    // Submissions to one site are spaced out. A burst from one person reads as a robot.
-    const host = hostOf(loadReport(id).url).split(".").slice(-2).join(".");
-    const wait = (lastSubmit.get(host) ?? 0) + RUN.submitGapMs - Date.now();
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-    lastSubmit.set(host, Date.now());
     const r = await submitJob(jev, id, force);
     console.log(`${id}  ${r.needsCode ? "needs your code" : r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
     if (r.state === "submitted") {
@@ -570,42 +593,8 @@ const hostOf = (url: string) => {
   }
 };
 
-/** Runs work over items side by side, holding each site to RUN.perHostConcurrency at once and RUN.hostGapMs between starts. */
-async function paced<T, R>(items: T[], host: (item: T) => string, work: (item: T) => Promise<R>): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  const todo = items.map((item, index) => ({ item, index }));
-  const sites = new Map<string, { active: number; last: number }>();
-  const worker = async () => {
-    while (todo.length) {
-      const now = Date.now();
-      const at = todo.findIndex(({ item }) => {
-        const s = sites.get(host(item));
-        const gentle = RUN.gentleHosts.some((h) => hostIs(host(item), h));
-        return !s || (s.active < (gentle ? 1 : RUN.perHostConcurrency) && now - s.last >= (gentle ? RUN.gentleGapMs : RUN.hostGapMs));
-      });
-      if (at < 0) {
-        await new Promise((r) => setTimeout(r, 200));
-        continue;
-      }
-      const [{ item, index }] = todo.splice(at, 1) as [{ item: T; index: number }];
-      const site = sites.get(host(item)) ?? { active: 0, last: 0 };
-      sites.set(host(item), { active: site.active + 1, last: Date.now() });
-      try {
-        results[index] = await work(item);
-      } finally {
-        const s = sites.get(host(item)) as { active: number; last: number };
-        s.active--;
-        // The pause counts from when a form finishes, not from when it started.
-        s.last = Date.now();
-      }
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(RUN.fillConcurrency, items.length) }, worker));
-  return results;
-}
-
 function printFill(r: FillReport) {
-  console.log(`\n== ${r.company} | ${r.title} [${r.jobId}] ${r.state === "filled" ? (r.ready ? "READY" : "filled, not ready") : "blocked"} in ${r.seconds.toFixed(1)}s, JEV $${r.jevCostUsd.toFixed(4)}`);
+  console.log(`\n== ${r.company} | ${r.title} [${r.jobId}] ${r.state === "filled" ? (r.ready ? "READY" : r.multiPage ? "first page filled, not ready" : "filled, not ready") : "blocked"} in ${r.seconds.toFixed(1)}s, JEV $${r.jevCostUsd.toFixed(4)}`);
   if (r.resolution) console.log(`   ${r.writerCalled === false ? "Memory" : "Claude"}: ${r.resolution.verdict}${r.resolution.reason ? `, ${r.resolution.reason}` : ""} (${r.resolution.answers.length} answers${r.recalled ? `, ${r.recalled} from memory` : ""}${r.writerCalled === false ? ", Claude was not asked" : ""})`);
   console.log(`   ${r.url}`);
   if (r.reason) console.log(`   ${r.reason}`);
@@ -613,6 +602,7 @@ function printFill(r: FillReport) {
   for (const d of r.drafts) console.log(`   DRAFT  ${d.selector}  intent=${d.intent} max=${d.maxLength ?? "-"}  ${d.label.slice(0, 200)}`);
   for (const v of r.reviews) console.log(`   REVIEW ${v.selector}  [${v.kind}] ${v.label.slice(0, 160)}  why=${v.why}  options=${v.options.slice(0, 15).join(" | ")}`);
   for (const f of r.failed) console.log(`   FAILED ${f.selector}  ${f.label.slice(0, 60)}: ${f.why}`);
+  for (const f of r.leftBlank ?? []) console.log(`   LEFT BLANK (optional) ${f.label.slice(0, 60)}: ${f.why}`);
   if (r.missingRequired.length) console.log(`   EMPTY REQUIRED: ${r.missingRequired.map((l) => l.slice(0, 60)).join(" | ")}`);
 }
 
