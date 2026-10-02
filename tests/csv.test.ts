@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COLUMNS, SHEET_COLUMNS, emptyRow, localDate, parseCsv, toCsv, upsertEntry } from "../src/log/csv.js";
+import { COLUMNS, SHEET_COLUMNS, compactRows, emptyRow, localDate, parseCsv, toCsv, upsertEntry } from "../src/log/csv.js";
 import type { QueueEntry } from "../src/jobs/queue.js";
 
 const entry = (over: Partial<QueueEntry> = {}): QueueEntry => ({
@@ -43,6 +43,16 @@ describe("csv", () => {
     const late = new Date(2026, 9, 1, 23, 30).toISOString();
     expect(localDate(late)).toBe("2026-10-01");
     expect(localDate("not a date")).toBe("not a date");
+  });
+  it("compacts rows that name one posting, keeping the furthest status and hand-filled cells", () => {
+    const board = "https://jobs.ashbyhq.com/acme/134c282c-2837-44a8-9f7c-74ca39486490";
+    const queued = { ...emptyRow(), Company: "Acme", "Job Link": `${board}/application?embed=true`, "App. Status": "Queued", "Contact #1 (Name / Role / LinkedIn)": "Jane" };
+    const applied = { ...emptyRow(), Company: "Acme", "Job Link": board, "App. Status": "Applied", "Applied On": "2026-10-01" };
+    const other = { ...emptyRow(), Company: "Beta", "Job Link": "https://example.com/jobs/1", "App. Status": "Skipped: old" };
+    const rows = compactRows([queued, other, applied]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ "App. Status": "Applied", "Applied On": "2026-10-01", "Contact #1 (Name / Role / LinkedIn)": "Jane", "Job Link": board });
+    expect(rows[1]?.Company).toBe("Beta");
   });
 });
 

@@ -82,7 +82,37 @@ export function loadRows(file = PATHS.applications): Row[] {
 
 export function saveRows(rows: Row[], file = PATHS.applications): void {
   mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, toCsv([[...COLUMNS], ...rows.map((r) => COLUMNS.map((c) => r[c] ?? ""))]));
+  writeFileSync(file, toCsv([[...COLUMNS], ...compactRows(rows).map((r) => COLUMNS.map((c) => r[c] ?? ""))]));
+}
+
+const STATUS_RANK = ["Applied", "Needs review", "Blocked", "In progress", "Queued", "Failed", "Skipped"];
+const rank = (r: Row) => {
+  const i = STATUS_RANK.findIndex((s) => r["App. Status"].startsWith(s));
+  return i < 0 ? STATUS_RANK.length : i;
+};
+
+/**
+ * One row per posting. Rows that name the same posting by different links (a list's link and the
+ * board's own) are merged: the row that got furthest wins, and cells a person filled in by hand
+ * are kept from whichever row has them. Order is preserved.
+ */
+export function compactRows(rows: Row[]): Row[] {
+  const kept = new Map<string, Row>();
+  const order: string[] = [];
+  rows.forEach((row, i) => {
+    const key = row["Job Link"] ? postingKey(row["Job Link"]) : row["Job ID"] || `row:${i}`;
+    const seen = kept.get(key);
+    if (!seen) {
+      kept.set(key, row);
+      order.push(key);
+      return;
+    }
+    const [winner, other] = rank(row) < rank(seen) ? [row, seen] : [seen, row];
+    const merged = { ...winner };
+    for (const c of COLUMNS) if (!merged[c] && other[c] && (SHEET_COLUMNS as readonly string[]).includes(c)) merged[c] = other[c];
+    kept.set(key, merged);
+  });
+  return order.map((k) => kept.get(k) as Row);
 }
 
 /** Inserts or updates the row for a queue entry, keyed by Job Link, then Job ID. Hand-filled columns are preserved. */
