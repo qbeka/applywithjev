@@ -43,6 +43,8 @@ export const FieldsDump = z.object({
   submitSelectors: z.array(z.string()).default([]),
   /** Embedded application forms found on the page, by iframe src. */
   frames: z.array(z.string()).default([]),
+  /** True when the page shows a password box: a login or account page, which the tool never fills. */
+  hasPassword: z.boolean().default(false),
 });
 export type FieldsDump = z.infer<typeof FieldsDump>;
 

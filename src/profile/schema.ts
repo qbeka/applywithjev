@@ -114,6 +114,8 @@ export const ProfileSchema = z.object({
     availability: z.string(),
     /** Left empty on purpose: the tool never volunteers a number. */
     salaryExpectation: z.string(),
+    /** What goes in a salary box that will not submit empty, when salaryExpectation is empty. */
+    salaryIfRequired: z.string().default("Negotiable"),
     willingToRelocate: YesNo,
     remote: z.enum(["preferred", "open", "no"]),
     preferredLocations: z.array(z.string()),
@@ -131,6 +133,11 @@ export const ProfileSchema = z.object({
   summary: z.string().min(40),
   /** Short facts Claude may use when drafting free text. Nothing outside this list is claimed. */
   facts: z.array(z.string()),
+  /**
+   * Standing answers: how the candidate wants a recurring question answered.
+   * JEV reads them when it picks an option; Claude reads them when it drafts.
+   */
+  answers: z.array(z.object({ question: z.string(), answer: z.string() })).default([]),
 });
 
 export type Profile = z.infer<typeof ProfileSchema>;

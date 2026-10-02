@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ProfileSchema } from "../src/profile/schema.js";
 import { PROFILE_KEYS, profileFacts, valueFor } from "../src/profile/fieldKeys.js";
-import { authForCountry, educationDatePlan, planField, questionsFor, valueForJob } from "../src/forms/mapForm.js";
+import { authForCountry, educationDatePlan, hasChoosableOptions, planField, questionsFor, valueForJob } from "../src/forms/mapForm.js";
 import { FieldsDump, type DumpedField } from "../src/forms/fields.js";
 import type { Job } from "../src/jobs/normalize.js";
 
@@ -135,3 +135,33 @@ describe("educationDatePlan", () => {
     expect(educationDatePlan(field({ id: "r", kind: "select", label: "Start Date", options: [{ value: "a", label: "2010" }, { value: "b", label: "2011" }] }), [degree], profile)?.action).toBe("review");
   });
 });
+
+describe("long option lists, salary boxes and split confidence", () => {
+  const j = job(["Toronto, ON"]);
+  const many = Array.from({ length: 60 }, (_, i) => ({ value: `v${i}`, label: `Country ${i}` }));
+  it("asks for a value, not an option index, when a list is too long to show", () => {
+    const long = field({ kind: "select", label: "Country", options: many });
+    expect(hasChoosableOptions(long)).toBe(false);
+    expect(hasChoosableOptions(field({ kind: "select", label: "Country", options: many.slice(0, 5) }))).toBe(true);
+    const q = questionsFor([long]);
+    expect(Object.keys((q.f0 as { criteria: Record<string, string> }).criteria)).toContain("country");
+    expect(planField(long, { type: "choice", choice: "country", probabilities: { country: 1 }, confidence: 1 }, profile, j)).toMatchObject({ action: "fill", value: "Canada" });
+  });
+  it("puts the standing wording in a salary box that will not submit empty, and leaves an optional one blank", () => {
+    const answer = { type: "choice" as const, choice: "salary_expectation", probabilities: {}, confidence: 0.9 };
+    expect(planField(field({ label: "Desired Pay", required: true }), answer, profile, j)).toMatchObject({ action: "fill", value: "Negotiable" });
+    expect(planField(field({ label: "Salary expectations", required: false }), answer, profile, j).action).toBe("skip");
+  });
+  it("adds up the probability of keys that would write the same value", () => {
+    const split = { type: "choice" as const, choice: "country", probabilities: { country: 0.4, citizenship: 0.35, work_authorization_country: 0.2, city: 0.05 }, confidence: 0.4 };
+    const planned = planField(field({ label: "In which country will you be based?" }), split, profile, j);
+    expect(planned).toMatchObject({ action: "fill", value: "Canada" });
+    expect(planned.confidence).toBeGreaterThan(0.9);
+  });
+  it("drafts an open question even when its intent is only a guess", () => {
+    const guess = { type: "choice" as const, choice: "bank:why_company", probabilities: {}, confidence: 0.3 };
+    expect(planField(field({ kind: "textarea", label: "What motivates you?" }), guess, profile, j)).toMatchObject({ action: "draft", key: "why_company" });
+    expect(planField(field({ kind: "text", label: "Mystery" }), { ...guess, choice: "city" }, profile, j).action).toBe("review");
+  });
+});
+

@@ -13,10 +13,14 @@ export const PATHS = {
   data: path.join(ROOT, "data"),
   profile: path.join(ROOT, "data", "profile.json"),
   profileExample: path.join(ROOT, "data", "profile.example.json"),
-  voice: path.join(ROOT, "data", "voice.md"),
+  /** The style guide for written answers. data/voice.local.md, when present, is the candidate's own and wins over the shipped one. */
+  voice: existsSync(path.join(ROOT, "data", "voice.local.md")) ? path.join(ROOT, "data", "voice.local.md") : path.join(ROOT, "data", "voice.md"),
+  bank: path.join(ROOT, "data", "bank.json"),
+  bankExample: path.join(ROOT, "data", "bank.example.json"),
   queue: path.join(ROOT, "data", "queue.json"),
   applications: path.join(ROOT, "data", "applications.csv"),
   cache: path.join(ROOT, "data", "cache"),
+  walledHosts: path.join(ROOT, "data", "cache", "walled-hosts.json"),
   runs: path.join(ROOT, "data", "runs"),
   imports: path.join(ROOT, "data", "imports"),
   resumeDir: path.join(ROOT, "data", "resume"),
@@ -73,6 +77,14 @@ export const DISCOVER = {
    * tail of weak matches. The queue is ranked, so the best apply first.
    */
   applyThreshold: 0.3,
+  /**
+   * Careers sites known to need an account or a login before the form, by hostname fragment.
+   * Jobs there are skipped before rating. Sites the apply run finds walled are remembered in
+   * data/cache/walled-hosts.json and skipped the same way next time.
+   */
+  accountWalledHosts: ["eightfold.ai", "careers.microsoft.com", "jobs.intuit.com", "jobs.ea.com"],
+  /** Job boards whose forms run over several pages, which the fill runner does not walk yet. Their jobs are skipped with that reason. */
+  multiStepAts: ["jobvite", "smartrecruiters"],
   /** Sources that are read from GitHub. Each entry names the raw file and its parser. */
   sources: {
     simplifyInternships:
@@ -110,6 +122,9 @@ export const LOCATION_MULTIPLIER = {
   unclear: 0.7,
 } as const;
 
+/** Applied when the posting asks for a graduation date the candidate does not have. They can still apply, so it ranks lower instead of being dropped. */
+export const GRADUATION_MISMATCH_MULTIPLIER = 0.6;
+
 /** Recency multiplier: 1.0 for today, decaying linearly to this floor at maxAgeDays. */
 export const RECENCY_FLOOR = 0.7;
 
@@ -124,9 +139,56 @@ export const FORM = {
   fieldsPerCall: 40,
 } as const;
 
+export const BROWSER = {
+  /** The Chrome binary the fill runner drives over the DevTools protocol. */
+  chromePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  /** Local DevTools port of the runner's own Chrome window. */
+  port: 9333,
+  /** Its profile lives with the other run data, so it is git-ignored and keeps cookies between runs. */
+  profileDir: path.join(ROOT, "data", "runs", "chrome-profile"),
+  /** Longest wait for a page to load and its form controls to stop changing. */
+  settleMs: 15_000,
+  /** How long a loaded page with no form controls is given before it is read as having no form. */
+  emptyPageMs: 6_000,
+  /** Longest wait for a dropdown's options to appear after a click or typing. */
+  optionsMs: 4_000,
+  /** A page that answered with an error is reopened once after this pause. */
+  retryAfterMs: 8_000,
+  /** Longest wait for a form to finish saving one field to its own server before the next field is set. */
+  saveMs: 3_000,
+  /** Longest wait for an uploaded resume to reach the form's server. */
+  uploadMs: 20_000,
+  /** Longest wait for the page to change after Submit is clicked. */
+  submitMs: 12_000,
+  pollMs: 150,
+} as const;
+
+/**
+ * The writer for what JEV cannot type: open questions, and fields it was unsure of.
+ * It is Claude Code itself, run headless, so it uses the user's own login and no API key.
+ */
+export const WRITER = {
+  command: "claude",
+  model: "claude-sonnet-5-5",
+  effort: "high",
+  timeoutMs: 180_000,
+  /** Job description characters handed to the writer. */
+  maxDescriptionChars: 6_000,
+} as const;
+
 export const RUN = {
   /** Applications filled, then paused for human review, before the loop becomes autonomous. */
   reviewFirst: 3,
   /** Target applications per run. */
   targetPerRun: 50,
+  /** Forms the runner fills side by side, one tab each. */
+  fillConcurrency: 5,
+  /** Of those, how many may be on the same site at once, and the pause between opening two forms there. Job boards throttle bursts. */
+  perHostConcurrency: 2,
+  /** Sites that save every field to their server as it changes, and rate-limit bursts: one form at a time, with a longer pause. */
+  gentleHosts: ["ashbyhq.com"],
+  gentleGapMs: 6_000,
+  /** Forms handed to the writer at once. */
+  writerConcurrency: 3,
+  hostGapMs: 2_500,
 } as const;

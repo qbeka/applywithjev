@@ -43,6 +43,8 @@ export function buildFormState(profile: Profile, job: Job, dump: FieldsDump, fie
       },
       demographics: profile.demographics,
       preferences: profile.preferences,
+      /** The candidate's own answers to recurring questions. They outrank any guess. */
+      standing_answers: profile.answers,
       gpa_policy: "Only give a GPA if the field is required. The cumulative GPA is " + (profile.education[0]?.gpa?.cumulative ?? "not provided") + " on a 4.0 scale.",
       rules: [
         "Never claim US work authorization.",
@@ -64,7 +66,7 @@ export function buildFormState(profile: Profile, job: Job, dump: FieldsDump, fie
       name: f.name,
       autocomplete: f.autocomplete,
       required: f.required,
-      options: f.options.map((o) => o.label).slice(0, FORM.maxOptionsForJev),
+      options: hasChoosableOptions(f) ? f.options.map((o) => o.label) : [],
     })),
   };
 }
@@ -98,9 +100,10 @@ export function questionsFor(fields: DumpedField[]): Questions {
     } else if (TEXT_KINDS.has(f.kind)) {
       q[f.id] = choice(`${title}: which value should fill it?`, keyCriteria);
     } else if (f.kind === "select" || f.kind === "radio" || f.kind === "combobox") {
-      const opts = f.options.slice(0, FORM.maxOptionsForJev);
-      if (opts.length === 0) {
-        q[f.id] = choice(`${title}: a dropdown whose options are not visible yet. Which value should be typed into it?`, keyCriteria);
+      const opts = f.options;
+      if (!hasChoosableOptions(f)) {
+        // No list yet, or one too long to show (countries, schools): JEV names the value and code finds it in the list.
+        q[f.id] = choice(`${title}: a dropdown ${opts.length ? `with ${opts.length} options, too many to list` : "whose options are not visible yet"}. Which value belongs in it?`, keyCriteria);
         continue;
       }
       const criteria: Record<string, string> = {};
@@ -116,6 +119,13 @@ export function questionsFor(fields: DumpedField[]): Questions {
   }
   return q;
 }
+
+/** A list JEV can pick from directly: present, and short enough to show whole. */
+export function hasChoosableOptions(f: DumpedField): boolean {
+  return (f.kind === "select" || f.kind === "radio" || f.kind === "combobox") && f.options.length > 0 && f.options.length <= FORM.maxOptionsForJev;
+}
+
+const SALARY_LABEL = /salary|compensation|desired pay|expected pay|pay (rate|range|expectation)|hourly rate|wage/i;
 
 const EDUCATION_NEIGHBOUR = /school|university|college|degree|field of study|major|education|graduat|start date|end date/i;
 const DATE_LABEL = /^(start|end)\s*(date|month|year)?$/i;
@@ -214,9 +224,8 @@ export function planField(f: DumpedField, answer: Answer | undefined, profile: P
     return { ...base, action: "review", key: "unknown", value: null, confidence: Math.max(p, 1 - p), note: "unsure whether to check" };
   }
 
-  const a = answer as ChoiceAnswer;
-  const hasOptions = (f.kind === "select" || f.kind === "radio" || f.kind === "combobox") && f.options.length > 0;
-  if (hasOptions) {
+  let a = answer as ChoiceAnswer;
+  if (hasChoosableOptions(f)) {
     if (a.choice === NONE) {
       if (f.required) return { ...base, action: "review", key: "unknown", value: null, confidence: a.confidence, note: "required but no option fits" };
       return { ...base, action: "skip", key: "leave_blank", value: null, confidence: a.confidence, note: "optional, left unselected" };
@@ -231,8 +240,21 @@ export function planField(f: DumpedField, answer: Answer | undefined, profile: P
   }
 
   const key = a.choice;
+  // Keys that would put the same text in the box are one answer, so their probabilities add up:
+  // "country", "citizenship" and "work authorization country" all say Canada.
+  const confidence = agreedConfidence(a, profile, job);
+  a = { ...a, confidence };
   const note = a.confidence < FORM.autoConfidence ? `confidence ${a.confidence.toFixed(2)}` : null;
-  if (a.confidence < FORM.reviewConfidence) return { ...base, action: "review", key, value: null, confidence: a.confidence, note: `low confidence, best guess ${key}` };
+  const textLike = f.kind === "text" || f.kind === "textarea";
+  // A salary box that will not submit empty gets the profile's standing wording, never a number the candidate did not give.
+  if (f.required && textLike && SALARY_LABEL.test(f.label) && !profile.preferences.salaryExpectation && (key === "salary_expectation" || key === "leave_blank" || key === "unknown" || key === "free_text")) {
+    return { ...base, action: "fill", key: "salary_expectation", value: profile.preferences.salaryIfRequired, confidence: a.confidence, note: "salary is required, so the standing wording is used" };
+  }
+  if (a.confidence < FORM.reviewConfidence) {
+    // An open question is drafted whatever the confidence: the writer reads the question itself, not JEV's guess at its intent.
+    if (f.kind === "textarea" && (key.startsWith("bank:") || key === "free_text")) return { ...base, action: "draft", key: key.startsWith("bank:") ? key.slice(5) : key, value: null, confidence: a.confidence, note: `intent is a guess (${a.confidence.toFixed(2)})` };
+    return { ...base, action: "review", key, value: null, confidence: a.confidence, note: `low confidence, best guess ${key}` };
+  }
   if (key.startsWith("bank:")) return { ...base, action: "draft", key: key.slice(5), value: null, confidence: a.confidence, note };
   if (isSpecialKey(key)) {
     if (key === "free_text") return { ...base, action: "draft", key: "free_text", value: null, confidence: a.confidence, note };
@@ -249,6 +271,14 @@ export function planField(f: DumpedField, answer: Answer | undefined, profile: P
     return { ...base, action: "fill", key, value, confidence: a.confidence, note };
   }
   return { ...base, action: "review", key, value: null, confidence: a.confidence, note: "unrecognized key" };
+}
+
+function agreedConfidence(a: ChoiceAnswer, profile: Profile, job: Job): number {
+  const valueOf = (key: string) => (isProfileKey(key) ? valueForJob(profile, job, key as FieldKey) : null);
+  const value = valueOf(a.choice);
+  if (value === null) return a.confidence;
+  const agreed = Object.entries(a.probabilities).reduce((sum, [key, p]) => (valueOf(key) === value ? sum + p : sum), 0);
+  return Math.min(1, Math.max(a.confidence, agreed));
 }
 
 function gpaValue(profile: Profile): string | null {
