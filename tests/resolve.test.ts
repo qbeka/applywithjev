@@ -4,7 +4,7 @@ import { buildPrompt, buildSystem, candidateContext, parseResolution, type OpenF
 import { ProfileSchema } from "../src/profile/schema.js";
 
 const profile = ProfileSchema.parse(JSON.parse(readFileSync(new URL("../data/profile.example.json", import.meta.url), "utf8")));
-const open: OpenField[] = [{ selector: "#q1", kind: "textarea", label: "Why Acme?", hint: "", required: true, maxLength: 500, options: [], why: "needs writing (why_company)" }];
+const open: OpenField[] = [{ selector: "#q1", kind: "textarea", label: "Why Acme?", question: "", hint: "", required: true, maxLength: 500, options: [], why: "needs writing (why_company)" }];
 
 describe("parseResolution", () => {
   it("reads a bare object and one wrapped in a code fence", () => {

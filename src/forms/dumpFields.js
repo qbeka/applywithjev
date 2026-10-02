@@ -78,6 +78,14 @@
     const by = el.getAttribute("aria-labelledby");
     if (by) by.split(/\s+/).forEach((id) => { const n = document.getElementById(id); if (n) bits.push(text(n)); });
     const wrap = el.closest("label"); if (wrap) bits.push(text(wrap).replace(text(el), ""));
+    const isOption = el.type === "checkbox" || el.type === "radio";
+    if (isOption && !bits.join("").trim()) {
+      // An option's own text sits right after its box. The text before it belongs to the option above,
+      // so it must never be used: that would tick the wrong box.
+      const next = el.nextElementSibling;
+      const after = next && !next.matches("input, select, textarea") ? text(next) : (el.nextSibling && el.nextSibling.nodeType === 3 ? el.nextSibling.textContent.trim() : "");
+      return (after || el.value || el.id || "").replace(/\s*[*✱]\s*$/, "").slice(0, LABEL_MAX);
+    }
     if (!bits.join("").trim()) bits.push(questionFor(el));
     if (!bits.join("").trim()) {
       // Walk up to a field container and take its first heading or label-like text.
@@ -89,6 +97,22 @@
       }
     }
     return [...new Set(bits.map((b) => b.replace(/\s*[*✱]\s*$/, "").replace(/\s*[*✱]\s+/g, " ").trim()).filter(Boolean))].join(" ").slice(0, LABEL_MAX);
+  };
+  // The question a checkbox or radio belongs to: the nearest label or legend above it that is not an option's own label.
+  const groupQuestionFor = (el) => {
+    const isOptionLabel = (l) => {
+      if (l.contains(el) || (el.id && l.htmlFor === el.id)) return true;
+      const target = l.htmlFor ? document.getElementById(l.htmlFor) : l.querySelector("input");
+      return !!target && (target.type === "checkbox" || target.type === "radio");
+    };
+    let cur = el.parentElement;
+    for (let depth = 0; cur && cur !== document.body && depth < 5; depth++, cur = cur.parentElement) {
+      // A container that holds a whole form section is too wide to say which question this option answers.
+      if (cur.querySelectorAll("input:not([type=checkbox]):not([type=radio]):not([type=hidden]), select, textarea").length > 1) break;
+      const before = [...cur.querySelectorAll("legend, label, [class*=question-title i]")].filter((l) => !isOptionLabel(l) && text(l) && (l.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
+      if (before.length) return text(before[before.length - 1]).replace(/\s*[*✱]\s*$/, "").slice(0, LABEL_MAX);
+    }
+    return "";
   };
   const hintFor = (el) => {
     const by = el.getAttribute("aria-describedby");
@@ -164,6 +188,8 @@
       autocomplete: el.getAttribute("autocomplete") || "",
       section: sectionFor(el),
     };
+    // For an option, the question it answers says more than the page section it sits in.
+    if (kind === "checkbox" || kind === "radio") f.section = groupQuestionFor(el) || f.section;
     f.required = isRequired(el, f.label) || /[*✱]\s*$/.test(questionFor(el));
     if (kind !== "radio" && kind !== "checkbox") f.label = cleanLabel(el, f.label);
 

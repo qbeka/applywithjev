@@ -17,6 +17,8 @@ export type OpenField = {
   selector: string;
   kind: string;
   label: string;
+  /** For a checkbox or a radio option: the question it belongs to. */
+  question: string;
   hint: string;
   required: boolean;
   maxLength: number | null;
@@ -51,6 +53,7 @@ const SYSTEM = [
   "- select, radio, combobox with options: value is one option copied exactly. With no options listed for a combobox, value is the text to search for.",
   "- checkbox: \"true\" or \"false\". Consent that is needed to submit the application is \"true\". Optional marketing, job alerts, text messages and keeping data for future roles are \"false\".",
   "- text and textarea: write in the candidate's voice, following the voice rules exactly, inside maxLength. Match the length to the question: one line for a one-line box, 60 to 140 words for an open question unless it asks for more or less.",
+  "- A checkbox or radio option comes with its question. Decide the whole group together from the question: tick the options that are true for the candidate, and for a yes/no pair tick exactly one.",
   "- A group of checkboxes where none applies: tick \"None of the above\" only if the facts settle every item in the group, otherwise tick \"I prefer not to answer\" when that exists.",
   "- Salary: use the standing wording unless a number is forced, which is needs_review.",
   "- Answer what is asked and no more. Sponsorship, visa status, GPA and anything else that counts against the candidate are stated truthfully wherever a field asks for them, and are not volunteered in free text that did not ask.",
@@ -67,6 +70,8 @@ export function candidateContext(profile: Profile): Record<string, unknown> {
     voice_rules: ctx.voice,
     candidate: {
       ...ctx.candidate,
+      email: profile.email,
+      phone: `${profile.phone.countryCode} ${profile.phone.national}`,
       education: profile.education,
       address: `${profile.address.city}, ${profile.address.region}, ${profile.address.country}`,
       spokenLanguages: profile.spokenLanguages,

@@ -499,6 +499,14 @@ export async function fillJob(jev: JevClient, profile: Profile, job: Job): Promi
     }
     let failedRaw = await applyFills(page, plan.fills, profile);
     trace(`${job.company}: filled ${Date.now() - started}ms`);
+    // A page that finishes starting up after the fill can wipe what was typed. Give it a moment, then put those values back once.
+    const wiped = plan.fills.filter((f) => TYPED_KINDS.has(f.kind) && failedRaw.some((x) => x.selector === f.selector));
+    if (wiped.length) {
+      await sleep(BROWSER.pollMs * 10);
+      const still = await applyFills(page, wiped, profile);
+      failedRaw = [...failedRaw.filter((x) => !wiped.some((f) => f.selector === x.selector)), ...still];
+      trace(`${job.company}: put back ${wiped.length - still.length} of ${wiped.length} wiped value(s)`);
+    }
     failedRaw = [...(await secondLook(page, jev, profile, job, d, plan, failedRaw)), ...uploadFailures];
     writeFileSync(planFile(job.id), JSON.stringify({ dump: d, plan }, null, 2));
     return done({ ...base, ...(await report(page, d, plan, failedRaw, uploaded)), seconds: (Date.now() - started) / 1000, jevCostUsd: plan.jevCostUsd });
@@ -637,7 +645,7 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
     const open = new Map<string, OpenField>();
     const add = (selector: string, why: string) => {
       const f = dumped(selector);
-      if (f && !open.has(selector)) open.set(selector, { selector, kind: f.kind, label: f.label, hint: f.hint || f.placeholder, required: f.required, maxLength: f.maxLength, options: f.options.map((o) => o.label), why });
+      if (f && !open.has(selector)) open.set(selector, { selector, kind: f.kind, label: f.label, question: f.kind === "checkbox" || f.kind === "radio" ? f.section : "", hint: f.hint || f.placeholder, required: f.required, maxLength: f.maxLength, options: f.options.map((o) => o.label), why });
     };
     for (const x of plan.drafts) add(x.selector, `needs writing (${x.intent})`);
     for (const x of plan.reviews) {
@@ -651,7 +659,12 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
     const before = await shownValues(page, plan.fields.map((f) => f.selector));
     const statesBefore = await controlStates(page, plan.fields.map((f) => f.selector));
     for (const f of emptyRequiredFields(d, plan, before, statesBefore)) add(f.selector, "required and still empty");
-    const filled = plan.fields.map((f, i) => ({ label: f.label, value: before[i] ?? "" })).filter((f) => f.value && f.label);
+    // An option is shown with its question, so Claude can see which choice a group already holds.
+    const withQuestion = (selector: string, label: string) => {
+      const f = dumped(selector);
+      return f && (f.kind === "checkbox" || f.kind === "radio") && f.section && f.section !== label ? `${f.section} / ${label}` : label;
+    };
+    const filled = plan.fields.map((f, i) => ({ label: withQuestion(f.selector, f.label), value: before[i] ?? "" })).filter((f) => f.value && f.label);
     const resolution = await resolveOpenFields(profile, entry, filled, [...open.values()]);
     const fills = resolution.answers
       .map((a) => ({ selector: a.selector, kind: open.get(a.selector)?.kind ?? "text", value: a.value }))
