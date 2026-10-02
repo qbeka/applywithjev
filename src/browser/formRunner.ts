@@ -443,7 +443,8 @@ export async function resolveJob(profile: Profile, entry: QueueEntry | null, job
     const next: Omit<FillReport, "ready"> = {
       ...r,
       fields,
-      drafts: plan.drafts.filter((x) => !after[plan.fields.findIndex((f) => f.selector === x.selector)]),
+      // An open question Claude chose to leave blank is settled too, unless it is required and still empty.
+      drafts: plan.drafts.filter((x) => stillRequired.has(x.selector)),
       // An open field Claude chose to leave blank is settled, unless it is still a required field with nothing in it.
       reviews: plan.reviews.filter((x) => stillRequired.has(x.selector)),
       failed: holds.map((f) => ({ ...f, label: labelOf(f.selector) })),

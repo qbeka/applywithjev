@@ -194,6 +194,8 @@ export async function noteApplied(ids: string[]): Promise<void> {
 async function walk(jev: JevClient, profile: Profile, e: QueueEntry, first: FillReport, o: RunOptions): Promise<FillReport> {
   let r = first;
   for (;;) {
+    // A form that could not be opened has nothing to resolve.
+    if (r.state !== "filled") return r;
     r = await resolvePage(jev, profile, e, r, o.fresh);
     if (!shouldAdvance(r)) return r;
     r = await nextPage(jev, profile, asJob(e), { dry: o.dry });

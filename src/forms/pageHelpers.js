@@ -146,7 +146,7 @@
       const el = q(sel);
       if (!el) return "missing";
       // A box drawn by its label counts as there when the label is.
-      const label = (el.type === "radio" || el.type === "checkbox") && (el.closest("label") || (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)));
+      const label = (el.type === "radio" || el.type === "checkbox") && (el.closest("label") || (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) || el.closest("[role=checkbox]"));
       // A select drawn by select2 counts as there when the box beside it is.
       const select2 = el.tagName === "SELECT" && /select2-hidden/.test(el.className) && el.nextElementSibling;
       return !el.disabled && (el.type === "file" || visible(el) || visible(control(el)) || (label && visible(label)) || (select2 && visible(select2))) ? "on" : "off";
@@ -281,6 +281,24 @@
     },
     controlCount() {
       return document.readyState !== "loading" ? document.querySelectorAll("input, select, textarea").length : -1;
+    },
+    /** What lies over a control at the point a click would land: empty when nothing does, else the words of the thing in the way (a cookie banner, a chat bubble). */
+    coveredBy(sel) {
+      const el = q(sel);
+      if (!el) return "";
+      const p = center(el);
+      const top = document.elementFromPoint(p.x, p.y);
+      if (!top || el.contains(top) || top.contains(el)) return "";
+      let box = top;
+      while (box.parentElement && box.parentElement !== document.body && text(box).length < 40) box = box.parentElement;
+      return text(box).slice(0, 200) || top.tagName;
+    },
+    /** Clicks a control from script, for the case where something lies over it and a real click cannot reach it. */
+    press(sel) {
+      const el = q(sel);
+      if (!el) return false;
+      el.click();
+      return true;
     },
     clickByText(pattern) {
       const re = new RegExp(pattern, "i");

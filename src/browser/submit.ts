@@ -37,9 +37,20 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
     const before = await page.evaluate<string>("window.__awj.pageText()");
     // Other forms may be filling in their own tabs. The click takes its turn for the front of the window.
     await inFront(page, async () => {
-      const p = await page.awj<Point>("point", pick.selector);
+      let p = await page.awj<Point>("point", pick.selector);
       if (!p.ok) throw new Error(`Submit control ${pick.selector} is not on the page.`);
-      await page.click(p.x, p.y);
+      // A cookie banner over the button would take the click. It is answered with its most private choice
+      // (necessary cookies only), never with "accept all". If the button is still covered, it is pressed from script.
+      if (await page.awj<string>("coveredBy", pick.selector)) {
+        const decline = await page.awj<Point>("clickByText", DECLINE_COOKIES);
+        if (decline.ok) {
+          await page.click(decline.x, decline.y);
+          await sleep(BROWSER.pollMs * 3);
+          p = await page.awj<Point>("point", pick.selector);
+        }
+      }
+      if (await page.awj<string>("coveredBy", pick.selector)) await page.awj<boolean>("press", pick.selector);
+      else await page.click(p.x, p.y);
     });
     const deadline = Date.now() + BROWSER.submitMs;
     let after = before;
@@ -77,11 +88,14 @@ export async function submitJob(jev: JevClient, jobId: string, force = false): P
         errors = await page.evaluate<string[]>("window.__awj.errors()");
       }
     }
-    return { state: state.state, confidence: state.confidence, url: await page.evaluate<string>("location.href"), errors, needsCode: state.state !== "submitted" && SECURITY_CODE.test(after), excerpt: after.replace(/\s+/g, " ").slice(0, 400) };
+    return { state: state.state, confidence: state.confidence, url: await page.evaluate<string>("location.href"), errors, needsCode: state.state !== "submitted" && SECURITY_CODE.test(after), excerpt: after.replace(/\s+/g, " ").slice(-400) };
   } finally {
     page.close();
   }
 }
+
+/** The choice on a cookie banner that allows the least. */
+const DECLINE_COOKIES = "^\\s*(necessary only|only necessary|necessary cookies only|use necessary cookies only|reject all|reject|decline|decline all|refuse|deny)\\s*$";
 
 /** A board that emails a code to confirm a person is applying. Only the person can enter it. */
 export const SECURITY_CODE = /verification code was sent|enter the \S+ code|security code/i;
