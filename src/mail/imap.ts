@@ -118,8 +118,10 @@ export type Sender = { name: string; address: string; domain: string };
 export function parseSender(from: string): Sender {
   const decoded = decodeHeader(from);
   const address = (/<([^>]+)>/.exec(decoded)?.[1] ?? /[^\s<>"]+@[^\s<>"]+/.exec(decoded)?.[0] ?? "").toLowerCase();
-  const name = decoded.replace(/<[^>]*>/, "").replace(/^"|"$/g, "").replace(/"/g, "").trim();
-  return { name: name === address ? "" : name, address, domain: address.split("@")[1] ?? "" };
+  // The display name is whatever comes before the address in angle brackets. A bare address has none.
+  const bracket = decoded.indexOf("<");
+  const name = (bracket >= 0 ? decoded.slice(0, bracket) : "").split('"').join("").trim();
+  return { name, address, domain: address.split("@")[1] ?? "" };
 }
 
 const param = (header: string, name: string): string => {
