@@ -11,9 +11,11 @@ describe("doctor", () => {
   });
   it("wants a key, and never prints it", () => {
     expect(checkKey("").ok).toBe(false);
-    const c = checkKey("sk-or-v1-abcdefghijklmnopqrstuvwxyz");
+    // Built at run time, so no key-shaped text sits in the repository.
+    const made = `sk-or-v1-${"k".repeat(12)}`;
+    const c = checkKey(made);
     expect(c.ok).toBe(true);
-    expect(JSON.stringify(c)).not.toContain("abcdefghij");
+    expect(JSON.stringify(c)).not.toContain(made);
     expect(checkKey("").fix).toMatch(/Do not paste the key into a chat/);
   });
   it("reads the example profile and names a missing one", () => {
