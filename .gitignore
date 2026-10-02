@@ -5,6 +5,8 @@
 
 # personal data: never committed
 data/profile.json
+data/bank.json
+data/voice.local.md
 data/applications.csv
 data/queue.json
 data/cache/

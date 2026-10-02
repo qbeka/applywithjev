@@ -30,6 +30,7 @@ export function answerContext(profile: Profile, entry: QueueEntry | null, questi
       name: `${profile.name.first} ${profile.name.last}`,
       summary: profile.summary,
       facts: profile.facts,
+      standingAnswers: profile.answers,
       experience: profile.experience,
       projects: profile.projects,
       skills: profile.skills,

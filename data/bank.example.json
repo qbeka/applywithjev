@@ -1,0 +1,20 @@
+{
+  "why_company": "{One sentence naming something specific this company builds or a problem it solves, from the posting.} I like building products people use every day, and I want to do that on a team whose work I would use myself. {One sentence connecting a concrete thing from the profile to what the company does.}",
+  "why_role": "I want a role where I ship real features and hear from users quickly. That is what I did at Example Corp, where I shipped a feature used by many people. {One sentence tying the role's stack or team to that.}",
+  "about_yourself": "I am a final-year Computing Science student at the University of Alberta, graduating April 2027. I work mostly in TypeScript, React, Node.js and Python. I interned at Example Corp as a software engineer and built and launched Example App on my own.",
+  "proudest_project": "Example App. I built and launched it as the only engineer. {Two sentences on what it does, the hard part, and one number from the profile.}",
+  "challenge": "{A specific problem from the profile's experience: what was wrong, what you tried, what worked, and the number that shows it.}",
+  "strengths": "I finish things. {One example from the profile with a number.}",
+  "weakness": "{One real area you are improving, and what you are doing about it.}",
+  "teamwork": "{One time from the profile where you worked with others: what you owned, what you agreed up front, how it went.}",
+  "leadership": "{One time you led or took ownership, from the profile, with the result.}",
+  "why_hire": "Because I have already done this work at a small scale. {Two concrete facts from the profile.}",
+  "career_goals": "I want to become an engineer who can own a product end to end. The next few years are about doing that inside a strong team.",
+  "technical_interest": "{A technology or problem space from the profile's projects, and the part of it you found hardest.}",
+  "ai_tools": "I use AI coding tools every day. They write the first draft and I review, test and own the result.",
+  "additional_info": "I am available to start in May 2027 and open to any term length. My work is at example.com.",
+  "availability_details": "Available from May 2027 for any term length, including 4, 8, 12 or 16 months.",
+  "relocation_details": "Yes, I am willing to relocate and to work on site, hybrid or remote.",
+  "how_heard_details": "An online job board.",
+  "experience_summary": "{Two to four sentences naming the exact technology from the question and the concrete places in the profile where it was used, with one number.}"
+}

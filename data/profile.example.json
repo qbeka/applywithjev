@@ -1,9 +1,15 @@
 {
-  "name": { "first": "Ada", "last": "Lovelace" },
+  "name": {
+    "first": "Ada",
+    "last": "Lovelace"
+  },
   "pronouns": "she/her",
   "dateOfBirth": "2004-01-15",
   "email": "ada@example.com",
-  "phone": { "national": "5555550123", "countryCode": "+1" },
+  "phone": {
+    "national": "5555550123",
+    "countryCode": "+1"
+  },
   "address": {
     "line1": "123 Example Street NW",
     "city": "Edmonton",
@@ -29,7 +35,12 @@
       "gradMonth": 4,
       "gradYear": 2027,
       "status": "in_progress",
-      "gpa": { "cumulative": 3.5, "major": 3.6, "scale": 4, "volunteer": false }
+      "gpa": {
+        "cumulative": 3.5,
+        "major": 3.6,
+        "scale": 4,
+        "volunteer": false
+      }
     }
   ],
   "experience": [
@@ -40,7 +51,9 @@
       "start": "2026-05",
       "end": "2026-08",
       "current": false,
-      "bullets": ["Shipped a feature used by many people."]
+      "bullets": [
+        "Shipped a feature used by many people."
+      ]
     }
   ],
   "projects": [
@@ -50,18 +63,38 @@
       "start": "2025-11",
       "end": "present",
       "link": "https://example.com",
-      "bullets": ["Built and launched an iOS app."]
+      "bullets": [
+        "Built and launched an iOS app."
+      ]
     }
   ],
   "skills": {
-    "languages": ["Python", "TypeScript"],
-    "frameworks": ["React", "Node.js"],
-    "tools": ["Git", "Docker"]
+    "languages": [
+      "Python",
+      "TypeScript"
+    ],
+    "frameworks": [
+      "React",
+      "Node.js"
+    ],
+    "tools": [
+      "Git",
+      "Docker"
+    ]
   },
-  "spokenLanguages": [{ "name": "English", "level": "Native" }],
+  "spokenLanguages": [
+    {
+      "name": "English",
+      "level": "Native"
+    }
+  ],
   "workAuthorization": {
-    "citizenships": ["Canada"],
-    "authorizedCountries": ["Canada"],
+    "citizenships": [
+      "Canada"
+    ],
+    "authorizedCountries": [
+      "Canada"
+    ],
     "requiresSponsorshipElsewhere": true,
     "statement": "Canadian citizen, authorized to work in Canada without sponsorship. I would need sponsorship to work in the United States."
   },
@@ -80,7 +113,11 @@
     "salaryExpectation": "",
     "willingToRelocate": "yes",
     "remote": "preferred",
-    "preferredLocations": ["Vancouver, BC", "Canada", "Remote"],
+    "preferredLocations": [
+      "Vancouver, BC",
+      "Canada",
+      "Remote"
+    ],
     "howDidYouHear": "LinkedIn",
     "references": "skip",
     "coverLetter": "never"
@@ -93,5 +130,19 @@
   "facts": [
     "Shipped an iOS app to many users as the sole engineer.",
     "Won first place at a hackathon."
+  ],
+  "answers": [
+    {
+      "question": "Which area of engineering are you most interested in?",
+      "answer": "Full stack first, then backend."
+    },
+    {
+      "question": "Can you work on site or relocate?",
+      "answer": "Yes. Willing to relocate and to work on site, hybrid or remote."
+    },
+    {
+      "question": "How did you hear about this job?",
+      "answer": "From a public list of internship and new-grad postings on GitHub. On a list of options pick the generic one that fits (job board, online, GitHub, other). Never pick a named site, event or person that was not the source."
+    }
   ]
 }

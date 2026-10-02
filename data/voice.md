@@ -5,7 +5,7 @@ from `applywithjev answer-context`; nothing is submitted that breaks them.
 
 ## Voice
 
-- First person, plain English, the way a sharp 20 year old engineer talks to
+- First person, plain English, the way a sharp young engineer talks to
   another engineer. Not a cover letter. Not a press release.
 - Direct. Lead with the point, then one or two specifics, then stop.
 - Concrete over abstract. A number, a product name, a thing that shipped beats
@@ -34,7 +34,9 @@ from `applywithjev answer-context`; nothing is submitted that breaks them.
 
 ## Example of the register
 
-"I built Philo because I wanted my friends to actually read philosophy. It is
-an iOS journal that matches what you write to quotes using local embeddings,
-so it runs with no API costs. 65,000 people have downloaded it and about
-18,000 use it every month. I did all of the engineering myself."
+"I built Example App because my friends kept losing track of shared bills. It
+is a small iOS app that splits a receipt from a photo. A few thousand people
+use it every month. I did all of the engineering myself."
+
+Your own copy of this guide goes in `data/voice.local.md`, which is
+git-ignored and used instead of this file when it exists.
