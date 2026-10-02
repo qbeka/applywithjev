@@ -130,8 +130,8 @@ npx tsx src/cli.ts submit <id> <id> ...        # send the ones you are happy wit
 npx tsx src/cli.ts apply --count 10 --submit   # or do it all in one go
 ```
 
-Stay at the computer: a CAPTCHA or an email verification code is yours to
-handle, in the runner's window. `npx tsx src/cli.ts log` lists what you
+Stay near the computer: a "prove you are human" test or an emailed code is
+yours to handle, in the runner's window. `npx tsx src/cli.ts log` lists what you
 sent; the same list is `applied.csv` at the top of the project folder, and
 `data/applications.csv` is the full record of every job considered. Inside
 Claude Code, `/apply` runs the same loop and deals with what needs a second
@@ -142,41 +142,24 @@ A rehearsal is not wasted work. The tool remembers the answers Claude wrote
 again. Changing your profile, drafts or voice guide makes it start over.
 `npx tsx src/cli.ts memory` shows what is remembered.
 
-## 9. Optional: sites that need a sign-in
+## 9. What the tool leaves for you
 
-```bash
-npx tsx src/cli.ts connect <link to the site or to a job on it>
-```
+- A job on a site that wants a sign-in, a form that asks for a signature,
+  and a form with a required question your profile cannot answer are not
+  sent. They are listed in `manual.csv` at the top of the project folder,
+  each with the reason and the link. `npx tsx src/cli.ts log --manual`
+  prints the list.
+- When a board emails you a code after you send, the filled form stays
+  open. `npx tsx src/cli.ts codes` brings each one to the front in turn.
+  Type the code from your email, click Submit, and the tool records the
+  application. The tool does not read or type the code.
 
-The site opens in the runner's window. Sign in there yourself. The tool
-waits, types nothing, and records the site once no password box has been on
-the page for a few seconds. If you were signed in already, add `--already`.
-`sites` lists what is connected; `disconnect <site>` signs the runner out.
+## 10. What the tool learns
 
-## 10. Optional: replies from Gmail
-
-1. Turn on 2-Step Verification for the Google account.
-2. Create an app password at https://myaccount.google.com/apppasswords.
-3. Put it in `.env` yourself, with the address:
-
-   ```
-   GMAIL_ADDRESS=you@gmail.com
-   GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
-   ```
-
-4. `npx tsx src/cli.ts doctor --online` signs in and out to prove it works.
-5. `npx tsx src/cli.ts inbox` reads replies and records them in
-   `applied.csv` (`response`, `response_on`).
-
-The mailbox is opened read-only. See `docs/SAFETY.md` for what is read and
-what leaves the machine.
-
-## 11. When a board emails you a code
-
-`apply --submit` prints how many forms are waiting for a code.
-`npx tsx src/cli.ts codes` brings each one to the front in turn. Type the
-code from your email, click Submit, and the tool records the application
-and moves on. The tool does not read or type the code.
+After every form the tool notes how the site's controls took their values
+(`data/knowledge.json`). `npx tsx src/cli.ts knowledge` shows the notes.
+`knowledge --share` writes them into `knowledge/sites.json`, which you can
+commit and send as a pull request. The notes hold nothing about you.
 
 ## Updating
 
@@ -190,8 +173,6 @@ Your `data/` files are untouched by updates.
 
 | Symptom | Fix |
 |---|---|
-| `Gmail refused the sign-in` | Use an app password, not the account password, and check that IMAP is allowed for the account |
-| `No sign-in page was shown` from `connect` | Open the sign-in page yourself in that window while it waits, or use `--already` if you are signed in |
 | Not sure what is wrong | `npx tsx src/cli.ts doctor --online` names it |
 | `OPENROUTER_API_KEY is not set` | Create `.env` as in step 3 |
 | An answer is stale after you changed something on the form by hand | `npx tsx src/cli.ts apply --fresh <id>`, or `memory --forget <company>` |

@@ -57,7 +57,12 @@ in place and names the next step.
 4. **Sends the form, if you asked it to.** It then reads the page that comes
    back. It records the job as applied only when that page confirms it.
 5. **Keeps a record.** Every application you sent is one row in
-   `applied.csv`. See [Find your applications](#find-your-applications).
+   `applied.csv`. Every job it had to leave for you is one row in
+   `manual.csv`, with the reason and the link. See
+   [Find your applications](#find-your-applications).
+6. **Learns.** After each form it notes how that site's controls took
+   their values, so the next form there goes faster and fails less. See
+   [How the tool learns](#how-the-tool-learns).
 
 ## What it costs
 
@@ -128,6 +133,10 @@ fills forms also prints its own cost at the end.
 - **It forgets when you change your profile.** A remembered answer is used
   only while your profile, your drafts and your voice guide are unchanged.
   A corrected fact is never overruled by an old answer.
+- **It does not ask JEV the same thing twice.** A posting that has not
+  changed keeps its rating from the last search, and a form that has not
+  changed keeps its field mapping. A second search on the same day costs
+  close to nothing.
 - **It sends Claude only what Claude needs.** Your profile is sent once per
   run and reused from a cache for the following forms.
 - **JEV does everything it can.** On a typical form JEV settles all but one
@@ -209,15 +218,13 @@ date. It ranks the job lower and leaves the choice to you.
 
 | Job board | What to expect |
 |---|---|
-| Greenhouse | Works well. After several applications in a short time, Greenhouse emails you a code to confirm that a person is applying. The tool stops there. You type the code; see [Codes that a board emails you](#codes-that-a-board-emails-you). |
+| Greenhouse | Works well. After several applications in a short time, Greenhouse emails you a code to confirm that a person is applying. The tool stops there. See [Codes that a board emails you](#codes-that-a-board-emails-you). |
 | Ashby | Works well. The tool fills these forms one field at a time, because Ashby saves each field as you type. |
-| Lever | Works well. Lever shows a "prove you are human" test when you send, which you do yourself. |
-| Rippling, Workable | Works. Tested on a few forms each. |
-| BambooHR | Works in part. The tool fills what it can confirm and holds the form if anything is uncertain. |
-| Tesla and other forms that run over several pages | The tool fills the first page, sees that the form goes on, and stops. See [What is planned](#what-is-planned). |
-| Jobvite, SmartRecruiters | Not supported yet. Their forms run over several pages. The tool skips these jobs when it finds jobs. |
-| A company's own career site that needs a sign-in | Works after you sign in to it once, if its form is a single page. See [Connect a site that needs a sign-in](#connect-a-site-that-needs-a-sign-in). Until you do, the tool skips the site. |
-| Workday, iCIMS, Taleo, Oracle, SuccessFactors, Amazon, LinkedIn | Not supported yet. Each needs an account and its forms run over several pages. The tool skips these jobs. See [What is planned](#what-is-planned). |
+| Lever | Works well. |
+| Rippling, Workable, BambooHR | Works. Tested on a few forms each. |
+| Jobvite, Tesla, and other forms that run over several pages | Works. The tool fills a page, checks it, clicks the form's own Next, and fills the next page, up to 8 pages. |
+| SmartRecruiters | Not supported yet. The tool cannot read its form. It skips these jobs. |
+| Workday, iCIMS, Taleo, Oracle, SuccessFactors, Amazon, LinkedIn, and any site that wants a sign-in | The tool does not sign in anywhere. It skips these jobs. If it meets a sign-in page during a run, it closes the page, puts the job on your by-hand list, and skips that site from then on. |
 
 ### Which parts of a form it fills
 
@@ -230,6 +237,8 @@ date. It ranks the job lower and leaves the choice to you.
   transcript, never gets the resume. It gets your transcript if you added
   one to your profile, and otherwise the form is held
 - dates, and dates split into a month box and a year box
+- calendars that cannot be typed into: the tool opens the calendar, turns
+  to the month, and clicks the day
 - phone numbers with a country picker
 - consent boxes
 
@@ -251,16 +260,22 @@ date. It ranks the job lower and leaves the choice to you.
 
 ### What it leaves to you
 
-The tool holds the form and tells you why when:
+The tool does not send a form, closes it, and puts the job on your by-hand
+list with the reason when:
 
-- a required question has no true answer in your profile, such as rating a
-  skill you never listed or giving an address in a country you do not live in
-- the form asks you to sign, by typing your name under a contract
+- the site wants a sign-in or an account
+- the form asks you to sign: to type your name under an NDA or another
+  contract, or to tick that you agree to be bound by one
+- a required question has no true answer in your profile, such as a
+  specific incident it does not record, a rating of a skill you never
+  listed, or an address in a country you do not live in
 - the form asks you to pick a date or a time for an interview or a test
-- the form includes a quiz or a take-home task
-- the site shows a "prove you are human" test or emails you a code. On
-  2 October 2026 Greenhouse asked for a code on 7 of 13 forms sent within
-  a few minutes
+- the form requires a transcript and your profile has none
+- the form requires a pay figure as a number and your profile gives none
+
+It leaves the filled form open for you when the site emails you a code or
+shows a "prove you are human" test after you send. On 2 October 2026
+Greenhouse asked for a code on 7 of 13 forms sent within a few minutes.
 
 ## Apply to jobs
 
@@ -327,63 +342,8 @@ It brings each waiting form to the front, one at a time. You type the code
 from your email and click Submit. The tool sees the confirmation, records
 the application and moves to the next form. Each one takes a few seconds.
 
-### Connect a site that needs a sign-in
-
-Some career sites show the form only after you sign in. To use one, sign in
-to it yourself, once:
-
-```bash
-npx tsx src/cli.ts connect <link to the site or to a job on it>
-```
-
-1. The site opens in the tool's Chrome window.
-2. You sign in there. You type your password; the tool does not touch the
-   page and never sees what you type.
-3. The tool notices that you are in, and remembers the site.
-
-Your sign-in stays in the tool's own Chrome profile, apart from your
-everyday browser, until the site ends it. Jobs on that site then go back in
-the queue. `sites` lists the sites you connected, and `disconnect <site>`
-signs the tool out of one.
-
-To go through every site that has jobs waiting on a sign-in, one after
-another, run `npx tsx src/cli.ts connect --all`. Press Enter to skip a site.
-
-This works for sites whose form is a single page. If the form runs over
-several pages, the tool fills the first page and stops.
-
-### Track replies from Gmail
-
-The tool can read the replies to your applications and record them: whether
-each company confirmed, declined, asked for an interview or a test, or made
-an offer.
-
-1. Turn on 2-Step Verification for your Google account, then create an app
-   password at https://myaccount.google.com/apppasswords.
-2. Open `.env` and fill in two lines yourself:
-
-   ```
-   GMAIL_ADDRESS=you@gmail.com
-   GMAIL_APP_PASSWORD=the app password
-   ```
-
-3. Run:
-
-   ```bash
-   npx tsx src/cli.ts inbox
-   ```
-
-What you should know before you turn this on:
-
-- **The tool only reads.** It opens your mailbox read-only. It cannot send,
-  move, mark or delete mail.
-- **It opens few messages.** It looks at the sender and the subject of your
-  recent mail. It opens a message only when the subject or the sender names
-  a company you applied to.
-- **It never opens a code message.** It notes that the code arrived, and
-  for which job.
-- **An app password is a real key to your mailbox.** Keep `.env` private.
-  You can delete the app password in your Google account at any time.
+Once a site has asked for a code, the tool waits longer between two
+applications to that site.
 
 ## Find your applications
 
@@ -408,10 +368,22 @@ npx tsx src/cli.ts log --open
 | `why_fit` | One sentence on why you suit the job |
 | `notes` | The reasons behind the score |
 | `job_id` | The tool's id for the job, which the commands accept |
-| `response`, `response_on` | What the company wrote back and when, if you turned on [Gmail](#track-replies-from-gmail) |
 
 The column names never change, so a script can rely on them. For the same
 rows as JSON, run `npx tsx src/cli.ts log --json`.
+
+### Jobs left for you
+
+`manual.csv`, also at the top of the project folder, lists the jobs the
+tool opened and could not finish. Each row has the company, the role, the
+reason, and the link, best fit first. Apply to these by hand if you want
+them.
+
+```bash
+npx tsx src/cli.ts log --manual
+```
+
+### Every job considered
 
 `data/applications.csv` is the full record. It lists every job the tool
 looked at, including the ones it skipped, with the reason. Its first 15
@@ -432,13 +404,11 @@ To print it, run `npx tsx src/cli.ts log --all`.
   agree to a contract, the tool leaves it for you.
 - **It will not choose a date for you.** If a form asks you to pick an
   interview or test slot, the tool leaves it for you.
-- **It will not create accounts or type into a sign-in page.** You sign
-  in yourself.
+- **It will not sign in anywhere, and it will not create accounts.** A job
+  behind a sign-in goes on your by-hand list.
 - **It will not pass a "prove you are human" test for you.** That covers
-  picture puzzles and the codes a board emails you. It never takes a code
-  out of your email.
-- **It will not change your email.** It can read replies if you allow it,
-  and nothing more.
+  picture puzzles and the codes a board emails you.
+- **It will not read your email.**
 - **It will not write a cover letter or give references.** It skips jobs
   that require them.
 - **It will not give your GPA** unless the form cannot be sent without it,
@@ -457,16 +427,66 @@ lives in the code.
 - The job text, your facts and the open questions go to Anthropic, through
   your own Claude Code sign-in, when a form has questions for Claude.
 - Your answers go to the employer's job board.
-- If you turn on Gmail: the sender and subject of your recent mail are read
-  on your computer. The text of a message goes to OpenRouter only when the
-  message is about a company you applied to, so that JEV can say what it
-  means. Code messages are never opened.
+- What the tool learns about sites stays on your computer unless you choose
+  to share it. See [How the tool learns](#how-the-tool-learns).
 - Nothing goes anywhere else. The tool collects no usage data.
 
 One thing to know before you rehearse: some job boards save each answer as
 it is typed, before you send the form. Ashby does this. A rehearsal on such
 a board leaves an unsent draft on that board. The employer is not told, and
 it is not an application.
+
+## How the tool learns
+
+The tool does not train a model. It keeps notes, and it reads them before
+it acts. There are three kinds.
+
+| What it keeps | Where | What it is for |
+|---|---|---|
+| **Site notes** | `knowledge/sites.json` in the repository, and `data/knowledge.json` on your computer | How each site's forms behave |
+| **Answer memory** | `data/memory.json` | Answers Claude wrote for you, so the same question is not paid for twice |
+| **JEV's earlier answers** | `data/cache/` | Ratings of postings and field mappings of forms that have not changed |
+
+### Site notes
+
+After every form, the tool writes down what it found out about the site:
+
+- for each kind of control, the way that got a value into it: set from
+  script, typed with real keys, clicked, or picked in a calendar
+- whether the site wants a sign-in
+- how many pages its form has
+- whether it emails a code after you send
+- which controls it could not set, and why
+
+The next time it meets that site, it starts with the way that worked. A
+phone box that ignored a value set from script is typed into at once, with
+no failed first try. A site that wanted a sign-in is skipped when jobs are
+found. A site that emailed a code gets a longer pause between applications.
+
+To see the notes, and the list of controls the tool has not learned yet:
+
+```bash
+npx tsx src/cli.ts knowledge
+```
+
+```bash
+npx tsx src/cli.ts knowledge --trouble
+```
+
+### Share what your runs learned
+
+The notes hold site names, kinds of controls and counts. They hold nothing
+about you: no answers, no names, and every quoted value is taken out of a
+reason before it is kept.
+
+To add your notes to the copy that ships with the repository:
+
+```bash
+npx tsx src/cli.ts knowledge --share
+```
+
+Then commit `knowledge/sites.json` and open a pull request. Every person who
+does this makes the tool better on the sites they applied to, for everyone.
 
 ## Make it yours
 
@@ -495,19 +515,18 @@ Run each command as `npx tsx src/cli.ts <command>`.
 | `doctor [--online]` | Checks your setup and names the next step |
 | `discover` | Finds and ranks jobs |
 | `queue` | Lists the ranked jobs |
-| `apply [ids] [--count N] [--submit] [--dry] [--fresh]` | Fills, checks and, with `--submit`, sends. `--fresh` ignores remembered answers |
-| `fill [ids] [--count N] [--dry]` | Fills forms and stops |
+| `apply [ids] [--count N] [--submit] [--dry] [--fresh]` | Fills each form, page by page, checks every answer and, with `--submit`, sends each form the moment it is ready. `--dry` is a rehearsal. `--fresh` ignores remembered answers |
+| `fill [ids] [--count N] [--dry]` | Fills the first page of each form and stops |
 | `resolve <ids>` | Answers what is still open on filled forms |
-| `inspect <id>` | Shows what a filled form holds now, and any errors on the page |
-| `set <id> --values file.json` | Writes answers you chose into a filled form |
 | `submit <ids>` | Sends forms that are ready |
 | `codes` | Shows each form that is waiting for an emailed code, one at a time, and records it once you have sent it |
-| `connect <link>`, `sites`, `disconnect <site>` | Sign in to a job site yourself, list the sites you connected, sign the tool out of one |
-| `inbox [--days N]` | Reads replies to your applications from Gmail and records them |
-| `check <ids>` | Reads what each form's tab shows now, without clicking, and records the job as applied if it is a confirmation. Use it after you finished a form by hand |
-| `log [--all] [--json] [--open]` | Lists your applications |
+| `check <ids>` | Reads what each form's tab shows now, without clicking, and records the job as applied if it is a confirmation |
+| `inspect <id>` | Shows what a filled form holds now, and any errors on the page |
+| `set <id> --values file.json` | Writes answers you chose into a filled form |
+| `log [--manual] [--all] [--json] [--open]` | Lists your applications, or with `--manual` the jobs left for you |
 | `status` | Shows totals and the reasons jobs were skipped |
 | `cost [--since time]` | Shows what you have spent on JEV and Claude |
+| `knowledge [--trouble] [--share]` | Shows what the tool has learned about sites, or shares it |
 | `memory [--forget text] [--clear]` | Shows or clears the answers the tool remembers |
 | `survey` | Shows how well recent fills went |
 | `mark <id> --status ...` | Records an outcome by hand |
@@ -519,7 +538,7 @@ Three parts share the work.
 | Part | Its job |
 |---|---|
 | [JEV](https://openrouter.ai/typesafe/jev-1.13) | Makes every choice that has a fixed set of answers. It returns probabilities, not text. One call takes about half a second. |
-| This program | Finds jobs, applies the rules, drives Chrome, checks every answer on the page, and remembers answers. |
+| This program | Finds jobs, applies the rules, drives Chrome, walks each form page by page, checks every answer on the page, and keeps its notes. |
 | [Claude Code](https://code.claude.com) | Writes the answers that need sentences. It also decides the few fields JEV was unsure about. It gets your facts and the open questions, and it has no other tools. |
 
 The rule is simple. If a question has a fixed set of answers, JEV answers
@@ -534,16 +553,11 @@ enforces it.
 
 None of this is built yet.
 
-- **Forms that run over several pages**, such as Tesla, Jobvite and
-  SmartRecruiters. Today the tool fills the first page and stops.
-- **Workday, iCIMS and similar.** On one search, 903 of the 4,454 jobs
-  found were on Workday. Each company there needs its own account, which
-  you would create yourself, and the forms run over several pages. This
-  builds on the sign-in support the tool has now.
-- **LinkedIn.** With LinkedIn connected, the tool could read your saved
-  searches and job alerts as another source of jobs. LinkedIn's terms limit
-  automated use, so this will be slow, opt-in, and off by default.
+- **SmartRecruiters.** Its form is drawn in a way the tool cannot read yet.
 - **Windows and Linux.** The tool is tested only on a Mac.
+
+Signing in to job sites is not planned. The tool skips those sites and
+lists their jobs for you to do by hand.
 
 ## Get help or contribute
 

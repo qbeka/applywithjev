@@ -85,6 +85,8 @@ it answered. Write the answer in the user's words.
 1. Pay. Is there a number or a range you want to give? If not, the tool
    leaves pay boxes empty, and writes `preferences.salaryIfRequired`
    ("Negotiable" unless you choose other words) when a box is required.
+   Also ask: when a form asks whether a stated rate or range is acceptable,
+   is the answer yes?
 2. How did you hear about the job? (`preferences.howDidYouHear`, and a
    standing answer that says which option to pick from a list.)
 3. Text messages, marketing email and job alerts: agree or decline?
@@ -105,7 +107,10 @@ it answered. Write the answer in the user's words.
 11. Are you free to travel for an interview or a test in person? The tool
     never picks a date or a time for you.
 12. Are you 18 or older? Some forms ask.
-13. Anything you never want the tool to say or to answer for you.
+13. Would you take a pre-employment drug test and a background check?
+14. Do you have a transcript to attach when a form requires one? If so,
+    its path goes in `transcript.path`. If not, such forms are left for you.
+15. Anything you never want the tool to say or to answer for you.
 
 Two choices are fixed in this version, so tell the user and do not ask:
 the tool never writes a cover letter and never gives references. It skips

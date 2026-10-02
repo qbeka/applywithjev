@@ -99,21 +99,6 @@ If the user wants other locations or kinds of roles than the ranking
 prefers, the settings are in `src/config.ts` (`LOCATION_MULTIPLIER`,
 `FIT_WEIGHTS`, `DISCOVER`).
 
-## 6b. Two optional extras
-
-Offer each one once, in a sentence, and move on if the user says no.
-
-- **Sites that need a sign-in.** `status` lists jobs skipped because the
-  "careers site needs an account". If there are any the user cares about,
-  they can run `npx tsx src/cli.ts connect <url>` and sign in themselves in
-  the window that opens. The tool types nothing there. Never ask for, read
-  or type a password.
-- **Replies from Gmail.** The tool can read replies to applications and
-  record them. It needs a Google app password that the user creates and
-  puts in `.env` themselves (`GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`; steps in
-  `docs/SETUP.md`). Say plainly that it only reads mail, and that an app
-  password is a real key to their mailbox. Then `doctor --online`.
-
 ## 7. Rehearse
 
 1. Run `npx tsx src/cli.ts apply --dry --count 3`. A Chrome window opens,
@@ -135,4 +120,12 @@ them without stopping at each one. Then follow the `/apply` skill. Nothing
 is sent before the user says so in their own words.
 
 When the run ends, show `npx tsx src/cli.ts log` and tell them where the
-record is: `applied.csv` at the top of the project folder.
+records are: `applied.csv` lists what was sent, and `manual.csv` lists the
+jobs the tool left for them with the reason and the link. Both are at the
+top of the project folder.
+
+Tell them two things the tool will not do, so they are not surprised: it
+does not sign in to any site, and it does not pass a "prove you are human"
+check. Jobs behind a sign-in go on the by-hand list. A form waiting for an
+emailed code stays open, and `npx tsx src/cli.ts codes` walks them through
+those.

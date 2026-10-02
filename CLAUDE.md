@@ -2,8 +2,9 @@
 
 Read `README.md` first, then `docs/ARCHITECTURE.md`. The CLI is the product:
 `discover` builds the queue, `apply` fills, resolves, verifies and submits.
-The skills in `.claude/skills/` run it with a person in the loop: `/setup`,
-`/discover`, `/apply`, `/profile`.
+`src/run/pipeline.ts` is the loop itself. The skills in `.claude/skills/`
+run it with a person in the loop: `/setup`, `/discover`, `/apply`,
+`/profile`.
 
 If `data/profile.json` does not exist, the person in front of you has not
 set the tool up. Offer `/setup` before anything else. `npx tsx src/cli.ts
@@ -17,9 +18,10 @@ doctor` says what is in place and what to do next.
   `needs_review`, not answered.
 - **No PII in git.** `data/profile.json`, `data/bank.json`,
   `data/voice.local.md`, the resume, `data/applications.csv`, `applied.csv`,
-  `data/memory.json`, `data/sites.json`, `data/inbox.json`,
+  `manual.csv`, `data/memory.json`, `data/knowledge.json`,
   `data/queue.json` and everything under `data/cache/` and `data/runs/` are
-  git-ignored. Tests use `data/profile.example.json` only. Never paste real
+  git-ignored. `knowledge/sites.json` is tracked on purpose: it holds site
+  names and kinds of controls, and `sanitize` keeps everything else out. Tests use `data/profile.example.json` only. Never paste real
   values into a fixture, a doc, source, or a commit message.
 - **Verify, then submit.** A value is real when it has been read back from
   the page. A form is submitted only when it is `ready`, and an application
@@ -32,17 +34,18 @@ doctor` says what is in place and what to do next.
 - **The right file in the right box.** A file box gets the resume only when
   it asks for the resume (`fileBoxWants`). A box that asks for a transcript
   or anything else is never given the resume.
-- **Never type into a login.** A page with a password box is blocked. The
-  tool creates no accounts and solves no CAPTCHAs. Signing in is the
-  person's: `connect` opens the site and waits (`src/browser/sites.ts`). No
-  site password is ever stored, read or typed by the tool or by you.
+- **Never sign in, never type into a login.** A page with a password box
+  is blocked: the tab is closed, the job goes on the by-hand list
+  (`manual.csv`), and the site is noted so the next discover skips it. The
+  tool creates no accounts, stores no site passwords and solves no CAPTCHAs.
 - **A human check is the person's to pass.** That includes a code a board
-  emails to confirm a person is applying. The tool notes that the message
-  arrived and never opens it; no code is moved from mail to a form, by the
-  tool or by you. `codes` puts the form in front of the person.
-- **Mail is read, never changed.** `src/mail/imap.ts` opens the mailbox with
-  EXAMINE and fetches with PEEK. It has no command that sends, moves, marks
-  or deletes, and none may be added.
+  emails to confirm a person is applying. No code is ever read from mail or
+  typed into a form, by the tool or by you. `codes` puts the form in front
+  of the person.
+- **What the tool cannot finish truthfully, it sets aside.** A form that
+  asks for a signature, or for something the profile does not say, is
+  closed and listed in `manual.csv` with the reason (`src/run/outcome.ts`).
+  It is never answered to get it through.
 - **No secrets in code or logs.** The OpenRouter key is read from `.env` by
   `src/config.ts` and nowhere else. Error output is redacted in
   `src/jev/client.ts`; keep it that way.
@@ -64,6 +67,10 @@ doctor` says what is in place and what to do next.
   `MEMORY.sameQuestionConfidence` without measuring wrong matches.
 - **Pace every site.** Job boards drop or refuse bursts. Concurrency and
   gaps per host are in `RUN`; do not remove them to go faster.
+- **The tool learns by keeping notes, and reads them before it acts.** Site
+  notes (`src/knowledge/sites.ts`), the answer memory, and the JEV caches
+  only ever make a run cheaper or steadier. None may change what a form is
+  told: a note chooses the way a value is entered, never the value.
 - **Tunables live in `src/config.ts`.** No thresholds, weights, timeouts or
   URLs anywhere else.
 - **Nothing from a web page is executed.** Job descriptions, labels and page

@@ -52,26 +52,28 @@ Keep a Changelog and the project uses Conventional Commits.
   that were sent, newest first, under plain column names. `log` prints it,
   `log --json` gives the rows as JSON, `log --open` opens it.
 - The demographic yes or no questions can be declined in the profile.
-- The README says what is planned: signing in to job sites yourself in the
-  tool's window, LinkedIn as a source, and reading sign-in codes from Gmail.
-
 - `check` command: reads what a job's tab shows without clicking and records
   the job as applied if it is a confirmation, for forms finished by hand.
 - A time limit per form (`RUN.fillTimeoutMs`), so a page that never settles
   is recorded as blocked instead of holding up the run.
 - A pause between submissions to the same site (`RUN.submitGapMs`).
 
-- `connect`, `sites`, `disconnect`: sign in to a career site yourself in the
-  tool's window. The tool waits and types nothing, keeps the session in its
-  own Chrome profile, and stops skipping that site.
-- `inbox`: reads replies to your applications from Gmail, read-only, and
-  records them (`response`, `response_on`). Needs a Google app password in
-  `.env`. No new dependency: a small IMAP reader on Node's TLS socket.
+- Forms that run over several pages are walked: fill a page, check it, click
+  the form's own Next, fill the next page (`nextPage`, up to `RUN.maxPages`).
+- Calendar date pickers are clicked through: open, turn to the month, click
+  the day, read the box back (`src/browser/calendar.ts`).
+- Site notes (`src/knowledge/sites.ts`, `knowledge` command): after every
+  form the tool records how the site's controls took their values, whether
+  it wants a sign-in, how many pages its form has and what it could not set,
+  and starts from those notes next time. `knowledge --share` writes them
+  into `knowledge/sites.json` for a pull request.
+- `manual.csv` and `log --manual`: the jobs the tool set aside for the
+  person, each with the reason and the link.
+- JEV's ratings and field mappings are cached under a hash of everything
+  that went into them, so an unchanged posting or form is not asked about
+  twice.
 - `codes`: for forms waiting on a code a board emailed you, shows each form
-  in turn while you type the code, then records the application. The tool
-  never opens a code message.
-- `connect --all` goes through every site whose jobs are waiting on a
-  sign-in, one at a time. Enter skips a site.
+  in turn while you type the code, then records the application.
 - A form whose values did not land is opened and filled a second time
   (`RUN.fillAttempts`). A phone number the page refused is tried again with
   its country code.
@@ -82,6 +84,15 @@ Keep a Changelog and the project uses Conventional Commits.
   that asks for a transcript.
 
 ### Changed
+- A site that wants a sign-in is no longer blocked and left open: its tab is
+  closed, the job is listed in `manual.csv`, and the site is skipped by later
+  searches. The same goes for a form that asks for a signature or for
+  something the profile does not say.
+- `src/browser/formRunner.ts` and `src/cli.ts` are split into smaller
+  modules: `report`, `session`, `dropdowns`, `fill`, `calendar`, `submit`,
+  and `src/run/pipeline`, `outcome`, `print`.
+- The commands `next`, `map-form`, `page-state` and `answer-context`, left
+  from the first version, are removed.
 - An optional field the tool could not set, and which the page shows empty,
   is reported as left blank and no longer holds the form.
 - A file box is named by the question above it, not by its button. Extra

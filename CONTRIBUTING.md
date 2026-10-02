@@ -18,10 +18,14 @@ Node 22 (`.nvmrc`). No build step; everything runs through `tsx`.
 - A new job board: `src/sources/`, then call it from `collectJobs` in
   `src/discover.ts`. Add a fixture under `tests/fixtures/` and a parser
   test. `docs/SOURCES.md` explains the contract.
-- A new kind of form control: `src/forms/dumpFields.js` (capture it),
-  `src/forms/fillFields.js` or `src/forms/pageHelpers.js` (set it and read
-  it back), `src/forms/mapForm.ts` (ask JEV about it). Capture a blank real
-  form as a fixture; never a filled one.
+- A new kind of form control: `src/forms/dumpFields.js` (capture it, and
+  name its `widget`), `src/forms/fillFields.js` or `src/forms/pageHelpers.js`
+  (set it and read it back), `src/browser/fill.ts` (the way it is written),
+  `src/forms/mapForm.ts` (ask JEV about it). `npx tsx src/cli.ts knowledge
+  --trouble` lists the controls nobody has taught the tool yet.
+- What your own runs learned about sites: `npx tsx src/cli.ts knowledge
+  --share`, then commit `knowledge/sites.json`. It holds site names and
+  kinds of controls, and nothing about you.
 - A form that was filled wrongly: rehearse it with
   `npx tsx src/cli.ts apply --dry <id>`, fix the cause, and rehearse again.
   `AWJ_TRACE=1` prints step timings and the page's own saves.

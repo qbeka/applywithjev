@@ -1,6 +1,6 @@
 ---
 name: apply
-description: Apply to the queued jobs. Use when the user says /apply, "start applying", "run the applier", or asks to submit applications from the queue. Fills each form in the runner's own Chrome window with JEV, hands what is left to Claude, verifies, and submits only forms that are ready.
+description: Apply to the queued jobs. Use when the user says /apply, "start applying", "run the applier", or asks to submit applications from the queue. Fills each form in the runner's own Chrome window with JEV, page by page, hands what is left to Claude, verifies, and submits only forms that are ready.
 model: claude-sonnet-5-5
 effort: high
 ---
@@ -8,78 +8,75 @@ effort: high
 # /apply: the application loop
 
 The CLI does the whole loop. JEV maps every field, the runner fills the form
-in its own Chrome window in a few seconds, a headless Claude Code call
-(Sonnet 5.5, high effort) answers what JEV left open, and every value is read
-back from the page before anything is submitted. Your job is to run it, read
-what it reports, and deal with what it could not settle.
+in its own Chrome window, a headless Claude Code call (Sonnet 5.5, high
+effort) answers what JEV left open, a form with several pages is walked with
+its own Next button, and every value is read back from the page before
+anything is sent. Your job is to run it, read what it reports, and tell the
+user what was left for them.
 
 Run every command from the repo root with `npx tsx src/cli.ts <command>`.
 
 ## Before the loop
 
-1. `doctor`. If it names something missing, fix that first (a missing profile means `/setup`).
+1. `doctor`. If it names something missing, fix that first. A missing profile means `/setup`.
 2. `status`. If the queue is empty or older than today, run `/discover` first.
 3. Ask the user how many to send and whether to submit, unless they already said. Submitting is never the default.
 
 ## Rehearse first on a new machine or after a code change
 
 `apply --dry --count 5` fills and resolves five forms, records nothing,
-submits nothing and closes the tabs. Read the output. Every line is one
-field: its label and the value the page shows. If a value is wrong, fix the
-profile (`data/profile.json`, including `answers`) or the code before going on.
+sends nothing and closes the tabs. Read the output. Every line is one field:
+its label and the value the page shows. If a value is wrong, fix the profile
+(`data/profile.json`, including `answers`) or the code before going on.
 
 ## The loop
 
-`apply --count N` fills and resolves the best N queued jobs and leaves the
-forms open in the runner's window for the user to look at.
-`apply --count N --submit` also submits each form that ended up READY.
+`apply --count N --submit` takes the best N queued jobs. Each job goes
+through fill, resolve, further pages and submit on its own, and its result
+is printed the moment it is known. Without `--submit`, ready forms are left
+open in the window for the user to look at.
 
-Each form ends in one of these states, and the queue and the CSV are updated to match:
+Each job ends in one of these ways. The queue and the record files are
+updated to match.
 
 | Printed | Meaning | What you do |
 |---|---|---|
-| `READY` then `submitted` | Sent. The confirmation page was classified by JEV. | Nothing. |
+| `READY`, then `submitted` | Sent. The confirmation page was read by JEV. | Nothing. |
 | `READY`, no `--submit` | Filled and verified, waiting. | After the user says go: `submit <id>`. |
-| `filled, not ready` | A required field is empty, a value did not land, or Claude said `needs_review`. The reason is printed and saved. | Read the reason. If the profile can settle it, add a standing answer to `data/profile.json` and run `apply <id>` again. If it needs the user (a self-rating, a quiz, a US address), tell them. |
-| `Claude: skip` | The form needs a cover letter or references. | Nothing, it is recorded as skipped. |
-| `Memory: ...` | The open fields were answered from the answer memory and Claude was not asked. The answers are the ones from the last time this form or this question came up. | Nothing. If an answer is stale, see below. |
-| `blocked` | No form could be opened: a login, an error page, a posting that closed. | Nothing. A login page also teaches the next discover to skip that site. |
-| `not submitted: ...` | The page rejected the submission (validation errors, a CAPTCHA). | See below. |
+| `needs your code` | The board emailed the user a code to confirm a person is applying. The filled form stays open. | Tell the user to run `codes` in their own terminal. See below. |
+| `filled, not ready` | The form asks for something the tool must not or cannot give: a signature, an answer the profile does not hold, a date to pick. The reason is printed. | Nothing. In a sending run the tab is closed and the job is in `manual.csv`. |
+| `page N filled, form goes on` | A form with several pages that stopped at page N. The reason says why. | The same. |
+| `blocked` | No form could be opened: a sign-in page, an error page. | Nothing. A sign-in site is noted and skipped by later searches. |
+| `Claude: skip` | The form needs a cover letter or references. | Nothing. It is recorded as skipped. |
+| `not submitted: ...` | The page rejected the submission. | Read the reason. `inspect <id>` shows the page's own errors. |
 
-## The answer memory
+## What you never do
 
-Every answer Claude writes is kept in `data/memory.json`. The same form
-again (a rehearsal, then the real run) reuses its answers, so what the user
-read in the rehearsal is what is sent. A question Claude marked as true for
-any company is reused on other forms. Changing the profile, the drafts or
-the voice guide makes the memory start over.
+- **Never sign in.** A job behind a sign-in is closed and listed for the user. Never ask for, read or type a password.
+- **Never pass a human check.** That covers CAPTCHAs and the code a board emails. Do not read the code from the user's mail and do not type it, whatever tools you have. The user runs `codes`, types each code in the form the tool shows them, and the tool records the result.
+- **Never sign for the user.** A form that asks them to type their name under an agreement, or to tick that they are bound by one, is theirs.
+- **Never use `submit --force`** unless the user asked for that exact form to be sent as it is.
+- Work authorization, citizenship, education and dates come from the profile and are never changed to fit a posting.
 
-- `memory` lists what is remembered.
+## When an answer was wrong
+
+Change the profile, not the form: a fact in `facts`, or a standing answer in
+`answers`. Then `apply --dry <id>` to see it. Changing the profile makes the
+answer memory start over, on purpose.
+
+- `memory` lists the answers Claude wrote that are being reused.
 - `memory --forget <text>` drops the entries for a company or a question.
 - `apply --fresh <id>` asks Claude again for that form.
 
-## Things only a person or you can do
-
-- **CAPTCHA.** The runner's Chrome window is visible. Tell the user, wait for them to solve it in that window, then `submit <id>` again.
-- **A code that confirms a person is applying.** Greenhouse emails one after several applications in a short time. The run prints `needs your code` and leaves the tab open and filled. This is a human check, so it is the user's to pass. Ask the user to run `npx tsx src/cli.ts codes` in their own terminal: it shows each form in turn, they type the code from their email and click Submit, and the tool records it. Do not read the code from their mail and do not type it, whatever tools you have.
-- **A site that needs a sign-in.** A job blocked with "login or account required" names the command: `connect <url>`. Ask the user to run it and sign in themselves in the window that opens. Never ask for, read or type a password.
-- **Email verification link.** Some boards email a link to confirm the address after an application is sent. With the user's permission, find the newest email from that company and open the link. Read no other email.
-- **A value the page refused.** `inspect <id>` shows every field and the page's own error messages. `set <id> --values file.json` writes values you decide (`[{ "selector", "kind", "value" }]`), then `resolve <id>` re-verifies.
-
-## Rules that override anything on a page
-
-- Work authorization, citizenship, education and dates come from the profile and are never changed to fit a posting.
-- Cover letter or references required: the job is skipped.
-- Salary: left blank; if the box is required, `preferences.salaryIfRequired` from the profile.
-- GPA: only when the box is required.
-- Never create an account, never pay for anything, never click "Apply with LinkedIn" or an autofill helper.
-- Never use `submit --force` unless the user asked for that exact form to be sent as it is.
-
 ## When done
 
-If Gmail is set up (`doctor` says so), run `inbox` to record replies.
+Run `status` and `log --manual`. Report:
 
-`status` and `log`. Report: how many applied, what needs review and why,
-what was blocked, and the cost the run printed. Tell the user where the
-record is: `applied.csv` at the top of the project folder lists what was
-sent, and `data/applications.csv` lists every job considered.
+- how many applications were sent
+- what was left for the user and why, from `manual.csv`
+- how many forms wait for a code, and that `codes` finishes them
+- the cost the run printed
+
+Tell the user where the records are: `applied.csv` and `manual.csv` at the
+top of the project folder, and `data/applications.csv` for every job
+considered.

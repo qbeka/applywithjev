@@ -14,7 +14,8 @@ npx tsx src/cli.ts discover
 ```
 
 It prints counts and the top 50 queued jobs with scores. Takes about a
-minute and costs about six cents of JEV.
+minute. The first search of a day costs about six cents of JEV. A later
+one costs less, because a posting that has not changed keeps its rating.
 
 Then show the user the top 15 as a short table (score, company, title,
 location, posted) and one line of totals. Mention jobs that were skipped for

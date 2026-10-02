@@ -10,10 +10,9 @@ check before you publish a fork.*
 | Lying on a form. Work authorization, citizenship, education, graduation date and employment dates come from `data/profile.json` and are not changed to fit a posting. | `src/forms/mapForm.ts` resolves authorization per country in code; the `/apply` skill forbids overriding it |
 | Claiming a fact that is not in the profile. Free-text answers may use only `facts`, `experience`, `projects`, and the posting. | `data/voice.md`, `src/answers/context.ts`, the skill |
 | Creating accounts on careers portals. Workday, iCIMS, Taleo, Oracle, SuccessFactors and Amazon Jobs are filtered out before rating. | `src/jobs/hardFilters.ts` |
-| Passing a human check. This covers CAPTCHAs and the code a board emails to confirm a person is applying. The runner's window is visible; the person does it there. The code message is never opened by the tool. | `submitJob` records the page as it is; `codes` in `src/cli.ts` shows the form and waits; `isCodeMessage` in `src/mail/inbox.ts` |
-| Changing mail. The mailbox is opened read-only and messages are only peeked at. | `src/mail/imap.ts`: EXAMINE and BODY.PEEK, and no command that writes |
-| Typing a password. Signing in to a site is done by the person in the runner's window; the tool waits and types nothing. | `waitForSignIn` in `src/browser/sites.ts` |
-| Typing into a login or account page. A page with a password box is blocked before anything is entered. | `dumpFields.js` (`hasPassword`), `fillJob` |
+| Passing a human check. This covers CAPTCHAs and the code a board emails to confirm a person is applying. The runner's window is visible; the person does it there. The tool reads no email. | `submitJob` records the page as it is; `codes` in `src/cli.ts` shows the form and waits |
+| Signing in. A page with a password box is closed, the job is listed in `manual.csv`, and the site is skipped from then on. No password is stored or typed. | `fillJob` in `src/browser/formRunner.ts`, `outcomeOf` in `src/run/outcome.ts` |
+| Signing a contract. A form that asks the candidate to type their name under an agreement, or to tick that they are bound by one, is set aside for them. | `SIGNATURE_LABEL` in `src/forms/mapForm.ts`, the writer's rules in `src/answers/resolve.ts` |
 | Submitting a form it has not verified. Every wanted value must be read back from the page and no required field may be empty. | `isReady`, `submitJob` in `src/browser/formRunner.ts` |
 | Calling an application sent because the button was clicked. The page after the click is classified, and only a confirmation counts. | `submitJob`, `decidePageState` |
 | Paying for anything, or entering payment details. | The skill |
@@ -48,18 +47,10 @@ profile. The tool makes that the only way.
   from your own browser, with no saved logins.
 - JEV usage is appended to `data/runs/jev-usage.jsonl` (ids, token counts,
   cost; no content).
-- Mail is read only if you add a Gmail app password to `.env`. The sender
-  and subject of recent messages are read on your machine. A message is
-  opened only when its subject or sender names a company you applied to, and
-  its text then goes to OpenRouter so JEV can say what it means. A code
-  message is never opened. What was read is kept in `data/inbox.json`
-  (sender, subject, date, kind), which is git-ignored.
-- An app password gives full access to the mailbox to whoever holds it. The
-  tool uses it only to read. Keep `.env` private and delete the app password
-  in your Google account when you stop using this.
-- Sites you sign in to stay signed in inside the runner's Chrome profile
-  (`data/runs/chrome-profile`). `disconnect <site>` removes a site's cookies
-  and stored data from it.
+- What the tool learns about sites (`data/knowledge.json`) holds host names,
+  kinds of controls, counts, and reasons with every quoted value taken out.
+  It leaves the machine only if you run `knowledge --share` and commit the
+  file it writes.
 
 ## Terms of service
 
@@ -73,7 +64,7 @@ for yourself.
 ## Before open-sourcing a fork
 
 ```bash
-git status --ignored | grep -E "data/|applied.csv"   # profile.json, bank.json, voice.local.md, memory.json, resume, both csv files, queue, runs must be ignored
+git status --ignored | grep -E "data/|applied.csv|manual.csv"   # profile.json, bank.json, voice.local.md, memory.json, knowledge.json, resume, the csv files, queue, runs must be ignored
 git log -p | grep -i -E "sk-or-v1-|@gmail|phone" # nothing should match
 npm audit --omit=dev
 ```
