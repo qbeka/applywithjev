@@ -5,6 +5,7 @@
  */
 import { DISCOVER } from "../config.js";
 import { ageDays, type Job } from "./normalize.js";
+import { isWalled } from "./walled.js";
 
 const NON_SOFTWARE_TITLE =
   /\b(hardware|mechanical|electrical|civil|chemical|aerospace|manufacturing|industrial|process|structural|rf|asic|fpga|pcb|silicon|analog|mixed[- ]signal|product manager|program manager|project manager|technical program|product design|ux|ui designer|graphic|marketing|sales|recruit|finance intern|accounting|legal|hr |human resources|supply chain|operations analyst|business analyst|data scientist|data science|data analyst|quant|trading|research scientist|phd|postdoc|technician|physical|optics|photonics|materials|biomed|clinical|nurse|teacher)\b/i;
@@ -31,11 +32,13 @@ export function locationTier(locations: string[]): LocationTier {
   return "international";
 }
 
-export function preFilter(job: Job, now = new Date()): string | null {
+export function preFilter(job: Job, now = new Date(), walled: (url: string) => boolean = isWalled): string | null {
   if (job.ats === "workday") return "workday (needs an account per company)";
   if (job.ats === "taleo" || job.ats === "oracle" || job.ats === "successfactors" || job.ats === "icims" || job.ats === "amazon") {
     return `${job.ats} (needs an account)`;
   }
+  if (walled(job.url)) return "careers site needs an account";
+  if ((DISCOVER.multiStepAts as readonly string[]).includes(job.ats)) return `${job.ats} (multi-step form, not supported yet)`;
   const age = ageDays(job, now);
   if (age !== null && age > DISCOVER.maxAgeDays) return `posted ${age} days ago`;
   if (NON_SOFTWARE_TITLE.test(job.title) && !SOFTWARE_TITLE.test(job.title)) {

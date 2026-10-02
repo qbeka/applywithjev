@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PATHS } from "../config.js";
+import { postingKey } from "../jobs/normalize.js";
 import type { QueueEntry } from "../jobs/queue.js";
 
 export const SHEET_COLUMNS = [
@@ -86,7 +87,9 @@ export function saveRows(rows: Row[], file = PATHS.applications): void {
 
 /** Inserts or updates the row for a queue entry, keyed by Job Link, then Job ID. Hand-filled columns are preserved. */
 export function upsertEntry(rows: Row[], e: QueueEntry, extra: Partial<Row> = {}): Row[] {
-  const idx = rows.findIndex((r) => r["Job Link"] === e.job.url || (r["Job ID"] && r["Job ID"] === e.job.id));
+  // One row per posting: the same job reached by another link updates its row instead of adding one.
+  const key = postingKey(e.job.url);
+  const idx = rows.findIndex((r) => r["Job Link"] === e.job.url || (r["Job ID"] && r["Job ID"] === e.job.id) || (r["Job Link"] !== "" && postingKey(r["Job Link"]) === key));
   const existing = idx >= 0 ? (rows[idx] as Row) : emptyRow();
   const status = statusLabel(e);
   const fit = e.fit;
@@ -99,7 +102,7 @@ export function upsertEntry(rows: Row[], e: QueueEntry, extra: Partial<Row> = {}
     "Job Link": e.job.url,
     "App. Status": status,
     Notes: existing.Notes || (fit ? fit.reasons.join("; ") : ""),
-    "Applied On": e.appliedAt ? e.appliedAt.slice(0, 10) : existing["Applied On"],
+    "Applied On": e.appliedAt ? localDate(e.appliedAt) : existing["Applied On"],
     "Fit Score": fit ? fit.score.toFixed(3) : "",
     "JEV Confidence": fit ? avgConfidence(fit).toFixed(2) : "",
     ATS: e.job.ats,
@@ -114,6 +117,14 @@ export function upsertEntry(rows: Row[], e: QueueEntry, extra: Partial<Row> = {}
   if (idx >= 0) rows[idx] = next;
   else rows.push(next);
   return rows;
+}
+
+/** The calendar day where the candidate is, not the UTC day: an application sent at 10pm belongs to today. */
+export function localDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function statusLabel(e: QueueEntry): string {
@@ -141,8 +152,10 @@ function workAuthLabel(e: QueueEntry): string {
 }
 
 function termLabel(e: QueueEntry): string {
+  // What the source list says (Summer 2027) reads better than the rating's own key (summer).
+  if (e.job.terms.length) return e.job.terms.join(", ");
   const a = e.fit?.answers.term as { choice?: string } | undefined;
-  return a?.choice ?? e.job.terms.join(", ");
+  return (a?.choice ?? "").replace(/_/g, " ");
 }
 
 function avgConfidence(fit: NonNullable<QueueEntry["fit"]>): number {

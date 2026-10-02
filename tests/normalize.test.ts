@@ -1,7 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { ageDays, atsFromUrl, canonicalUrl, dedupe, jobId, parseLooseDate, type Job } from "../src/jobs/normalize.js";
+import { ageDays, atsFromUrl, canonicalUrl, dedupe, jobId, parseLooseDate, postingKey, type Job } from "../src/jobs/normalize.js";
+
+describe("postingKey", () => {
+  it("gives one id to every way a list links the same posting", () => {
+    expect(postingKey("https://www.pinterestcareers.com/jobs/?gh_jid=8138049")).toBe("greenhouse:8138049");
+    expect(postingKey("https://job-boards.greenhouse.io/pinterest/jobs/8138049")).toBe("greenhouse:8138049");
+    expect(postingKey("https://boards.greenhouse.io/embed/job_app?for=pinterest&token=8138049")).toBe("greenhouse:8138049");
+    expect(postingKey("https://job-boards.eu.greenhouse.io/acme/jobs/4978937101")).toBe("greenhouse-eu:4978937101");
+    const ashby = "https://jobs.ashbyhq.com/acme/134c282c-2837-44a8-9f7c-74ca39486490";
+    expect(postingKey(`${ashby}/application?embed=true`)).toBe(postingKey(`${ashby}?locationId=6fdca225`));
+    expect(jobId("https://stripe.com/jobs/search?gh_jid=8157838")).toBe(jobId("https://job-boards.greenhouse.io/stripe/jobs/8157838"));
+  });
+
+  it("keeps different postings apart and detects iCIMS behind a careers page", () => {
+    expect(postingKey("https://www.pinterestcareers.com/jobs/?gh_jid=8138049")).not.toBe(postingKey("https://www.pinterestcareers.com/jobs/?gh_jid=7838591"));
+    expect(postingKey("https://example.com/careers/42")).toBe("https://example.com/careers/42");
+    expect(atsFromUrl("https://careers.example.com/jobs/5150?icims=1")).toBe("icims");
+  });
+});
 
 describe("canonicalUrl and jobId", () => {
+  it("treats a posting and its form page as the same job", () => {
+    const posting = "https://jobs.ashbyhq.com/acme/134c282c-2837-44a8-9f7c-74ca39486490";
+    expect(canonicalUrl(`${posting}/application?embed=true`)).toBe(posting);
+    expect(canonicalUrl(`${posting}?embed=true&locationId=6fdca225`)).toBe(posting);
+    expect(jobId(`${posting}/application?embed=true`)).toBe(jobId(posting));
+    expect(canonicalUrl("https://jobs.lever.co/acme/0a1b2c3d-0000-4000-8000-000000000000/apply")).toBe("https://jobs.lever.co/acme/0a1b2c3d-0000-4000-8000-000000000000");
+  });
+
   it("drops tracking params and fragments so duplicates collapse", () => {
     const a = canonicalUrl("https://jobs.ashbyhq.com/replit/7e0d?utm_source=github-vansh-ouckah&ref=Simplify#top");
     const b = canonicalUrl("https://jobs.ashbyhq.com/replit/7e0d");

@@ -9,6 +9,7 @@ import { DISCOVER, PATHS } from "./config.js";
 import { JevClient } from "./jev/client.js";
 import { describe } from "./jobs/describe.js";
 import { preFilter } from "./jobs/hardFilters.js";
+import { isWalled, learnedWalledHosts } from "./jobs/walled.js";
 import { dedupe, type Job } from "./jobs/normalize.js";
 import { entryFor, loadQueue, saveQueue, sortEntries, type QueueEntry, type QueueFile } from "./jobs/queue.js";
 import { rateJob, type FitResult } from "./jobs/rate.js";
@@ -23,13 +24,20 @@ import { fetchSimplify } from "./sources/simplify.js";
 import { importSheet } from "./sources/sheetImport.js";
 import { mapLimit } from "./util/http.js";
 
-export const EARLY_CAREER_TITLE = /\b(intern|internship|co-?op|new grad|new graduate|early career|early-career|entry[- ]level|junior|graduate|university|student|campus|associate software|software engineer i\b|engineer i\b|swe i\b|2027)\b/i;
+export const EARLY_CAREER_TITLE = /\b(intern|internship|co-?op|new grad|new graduate|early career|early-career|entry[- ]level|junior|graduate|university|student|campus|associate software|software engineer i\b|engineer i\b|swe i\b)\b/i;
+
+/** A board posting counts as early-career by its title, or by naming the candidate's graduation year. */
+export function isEarlyCareerTitle(title: string, gradYear?: number): boolean {
+  return EARLY_CAREER_TITLE.test(title) || (gradYear !== undefined && new RegExp(`\\b${gradYear}\\b`).test(title));
+}
 
 export type DiscoverOptions = {
   boards?: boolean;
   limit?: number;
   log?: (line: string) => void;
   now?: Date;
+  /** The candidate's graduation year: a board title that names it is early-career. */
+  gradYear?: number;
 };
 
 export type DiscoverSummary = {
@@ -81,7 +89,7 @@ export async function collectJobs(opts: DiscoverOptions = {}): Promise<Job[]> {
     let fromBoards = 0;
     results.forEach((r) => {
       if (!r.ok) return;
-      const early = r.value.filter((j) => EARLY_CAREER_TITLE.test(j.title));
+      const early = r.value.filter((j) => isEarlyCareerTitle(j.title, opts.gradYear));
       fromBoards += early.length;
       jobs.push(...early);
     });
@@ -96,14 +104,16 @@ export async function discover(profile: Profile, jev: JevClient, opts: DiscoverO
   const previous = loadQueue();
   const prevById = new Map(previous.entries.map((e) => [e.job.id, e]));
 
-  const all = await collectJobs(opts);
+  const gradYear = profile.education[0]?.gradYear;
+  const all = await collectJobs({ ...opts, ...(gradYear !== undefined ? { gradYear } : {}) });
+  const learned = learnedWalledHosts();
   const collected = all.length;
   log(`[discover] ${collected} unique postings`);
 
   const kept: Job[] = [];
   const entries: QueueEntry[] = [];
   for (const job of all) {
-    const reason = preFilter(job, now);
+    const reason = preFilter(job, now, (url) => isWalled(url, learned));
     if (reason) entries.push(entryFor(job, null, reason, prevById.get(job.id)));
     else kept.push(job);
   }

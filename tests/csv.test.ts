@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { COLUMNS, SHEET_COLUMNS, emptyRow, parseCsv, toCsv, upsertEntry } from "../src/log/csv.js";
+import { COLUMNS, SHEET_COLUMNS, emptyRow, localDate, parseCsv, toCsv, upsertEntry } from "../src/log/csv.js";
 import type { QueueEntry } from "../src/jobs/queue.js";
 
 const entry = (over: Partial<QueueEntry> = {}): QueueEntry => ({
   job: { id: "abc", source: "simplify-internships", company: "Acme", title: "SWE Intern", url: "https://x/1", ats: "greenhouse", locations: ["Toronto, ON"], postedAt: "2026-10-01", terms: ["Summer 2027"], sponsorship: "unknown", degrees: [], category: null },
-  fit: { score: 0.61, decision: "apply", skipReason: null, reasons: ["stack strong"], components: {}, locationTier: "canada", answers: { work_auth: { type: "choice", choice: "canada_ok", probabilities: {}, confidence: 0.9 }, term: { type: "choice", choice: "summer_2027", probabilities: {}, confidence: 1 }, level: { type: "choice", choice: "internship", probabilities: {}, confidence: 1 } } },
+  fit: { score: 0.61, decision: "apply", skipReason: null, reasons: ["stack strong"], components: {}, locationTier: "canada", answers: { work_auth: { type: "choice", choice: "canada_ok", probabilities: {}, confidence: 0.9 }, term: { type: "choice", choice: "summer", probabilities: {}, confidence: 1 }, level: { type: "choice", choice: "internship", probabilities: {}, confidence: 1 } } },
   preFilterReason: null, status: "queued", statusReason: null, attempts: 0, discoveredAt: "2026-10-02T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z", appliedAt: null, notes: null, ...over,
 });
 
@@ -20,7 +20,7 @@ describe("csv", () => {
   });
   it("upserts by job link and preserves hand-filled columns", () => {
     let rows = upsertEntry([], entry());
-    expect(rows[0]).toMatchObject({ Company: "Acme", "App. Status": "Queued", "Fit Score": "0.610", "Visa / Work Auth": "Canada. No visa needed.", Term: "summer_2027" });
+    expect(rows[0]).toMatchObject({ Company: "Acme", "App. Status": "Queued", "Fit Score": "0.610", "Visa / Work Auth": "Canada. No visa needed.", Term: "Summer 2027" });
     rows[0]!["Contact #1 (Name / Role / LinkedIn)"] = "Jane / Recruiter / url";
     rows = upsertEntry(rows, entry({ status: "applied", appliedAt: "2026-10-02T15:00:00Z" }), { "Why You're a Fit": "fits" });
     expect(rows).toHaveLength(1);
@@ -32,4 +32,17 @@ describe("csv", () => {
     expect(rows[0]?.["App. Status"]).toBe("Skipped: workday");
     expect(emptyRow()["Job ID"]).toBe("");
   });
+  it("keeps one row per posting however the job was linked", () => {
+    const board = "https://jobs.ashbyhq.com/acme/134c282c-2837-44a8-9f7c-74ca39486490";
+    let rows = upsertEntry([], entry({ job: { ...entry().job, id: "old", url: `${board}/application?embed=true` } }));
+    rows = upsertEntry(rows, entry({ job: { ...entry().job, id: "new", url: board }, status: "applied", appliedAt: "2026-10-02T15:00:00Z" }));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ "Job ID": "new", "Job Link": board, "App. Status": "Applied" });
+  });
+  it("dates an application by the local calendar day", () => {
+    const late = new Date(2026, 9, 1, 23, 30).toISOString();
+    expect(localDate(late)).toBe("2026-10-01");
+    expect(localDate("not a date")).toBe("not a date");
+  });
 });
+

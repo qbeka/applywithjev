@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DISCOVER } from "../src/config.js";
 import { locationTier, preFilter } from "../src/jobs/hardFilters.js";
 import type { Job } from "../src/jobs/normalize.js";
-import { FIT_QUESTIONS, scoreFromAnswers } from "../src/jobs/rate.js";
+import { FIT_QUESTIONS, fitQuestions, scoreFromAnswers } from "../src/jobs/rate.js";
 import type { Answer } from "../src/jev/types.js";
 
 const now = new Date("2026-10-02T12:00:00Z");
@@ -68,7 +68,8 @@ function answers(over: Record<string, Partial<Answer>> = {}): Record<string, Ans
     is_unpaid: { type: "noul", noul: 0.02 },
     needs_advanced_degree: { type: "noul", noul: 0.02 },
     work_auth: { type: "choice", choice: "canada_ok", probabilities: { canada_ok: 1 }, confidence: 1 },
-    term: { type: "choice", choice: "summer_2027", probabilities: { summer_2027: 1 }, confidence: 1 },
+    term: { type: "choice", choice: "summer", probabilities: { summer: 1 }, confidence: 1 },
+    graduation_excluded: { type: "noul", noul: 0.05 },
     returning_student_required: { type: "noul", noul: 0.2 },
     stack_match: { type: "score", score: 3, legend: {}, probabilities: {}, confidence: 0.8 },
     experience_match: { type: "score", score: 3, legend: {}, probabilities: {}, confidence: 0.8 },
@@ -117,3 +118,31 @@ describe("scoreFromAnswers", () => {
     expect(fit.locationTier).toBe("remote");
   });
 });
+
+describe("graduation window and account walls", () => {
+  it("ranks a posting that asks for another graduation date lower, without dropping it", () => {
+    const fits = scoreFromAnswers(job(), answers(), now);
+    const excluded = scoreFromAnswers(job(), answers({ graduation_excluded: { noul: 0.95 } }), now);
+    expect(excluded.decision).not.toBe("skip");
+    expect(excluded.score).toBeLessThan(fits.score);
+    expect(excluded.reasons).toContain("asks for a different graduation date");
+  });
+  it("reads a rating saved before the question existed as no mismatch", () => {
+    const old = answers();
+    delete old.graduation_excluded;
+    expect(scoreFromAnswers(job(), old, now).score).toBe(scoreFromAnswers(job(), answers(), now).score);
+  });
+  it("words the term and graduation questions from the profile's own graduation date", () => {
+    const q = fitQuestions({ education: [{ school: "U", degree: "BSc", field: "CS", startMonth: 9, startYear: 2025, gradMonth: 12, gradYear: 2028, status: "in_progress" }] });
+    expect(JSON.stringify(q.term)).toContain("Summer 2028");
+    expect(JSON.stringify(q.graduation_excluded)).toContain("December 2028");
+    for (const k of Object.keys(answers())) expect(q).toHaveProperty(k);
+  });
+  it("skips careers sites that need an account and boards whose forms run over several pages", () => {
+    expect(preFilter(job({ url: "https://acme.eightfold.ai/careers/job/1", ats: "other" }), now, () => true)).toMatch(/account/);
+    expect(preFilter(job({ ats: "jobvite" }), now, () => false)).toMatch(/multi-step/);
+    expect(preFilter(job({ ats: "smartrecruiters" }), now, () => false)).toMatch(/multi-step/);
+    expect(preFilter(job(), now, () => false)).toBeNull();
+  });
+});
+

@@ -29,7 +29,29 @@ export type Job = {
 };
 
 export function jobId(url: string): string {
-  return createHash("sha1").update(canonicalUrl(url)).digest("hex").slice(0, 16);
+  return createHash("sha1").update(postingKey(url)).digest("hex").slice(0, 16);
+}
+
+/**
+ * What makes two links the same posting. The lists and the boards link one job in several ways
+ * (the careers page with gh_jid, the board page, the embedded form), so the big three are keyed by
+ * the ATS's own posting id; everything else by its canonical URL.
+ */
+export function postingKey(raw: string): string {
+  const url = canonicalUrl(raw);
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return url;
+  }
+  const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(url)?.[0]?.toLowerCase();
+  if (/(^|\.)ashbyhq\.com$/.test(host) && uuid) return `ashby:${uuid}`;
+  if (/(^|\.)lever\.co$/.test(host) && uuid) return `lever:${uuid}`;
+  const gh = /[?&](?:gh_jid|token)=(\d+)/.exec(url)?.[1] ?? (host.includes("greenhouse.io") ? /\/jobs\/(\d+)/.exec(url)?.[1] : undefined);
+  // Greenhouse numbers its EU and US postings separately.
+  if (gh) return `greenhouse${host.includes(".eu.") ? "-eu" : ""}:${gh}`;
+  return url;
 }
 
 /** Drops tracking params and fragments so the same posting from two lists dedupes. */
@@ -37,9 +59,12 @@ export function canonicalUrl(raw: string): string {
   try {
     const u = new URL(raw.trim());
     u.hash = "";
-    const drop = [...u.searchParams.keys()].filter((k) => /^(utm_|ref$|source$|src$|gh_src$|lever-source|mobile$|needsRedirect$)/i.test(k));
+    const drop = [...u.searchParams.keys()].filter((k) => /^(utm_|ref$|source$|src$|gh_src$|lever-source|mobile$|needsRedirect$|embed$|locationId$)/i.test(k));
     for (const k of drop) u.searchParams.delete(k);
     u.hostname = u.hostname.toLowerCase();
+    // A posting and its own form page are one job: Ashby adds /application, Lever adds /apply.
+    if (/(^|\.)ashbyhq\.com$/.test(u.hostname)) u.pathname = u.pathname.replace(/\/application\/?$/, "");
+    if (/(^|\.)lever\.co$/.test(u.hostname)) u.pathname = u.pathname.replace(/\/apply\/?$/, "");
     let s = u.toString();
     if (s.endsWith("/")) s = s.slice(0, -1);
     return s;
@@ -61,7 +86,7 @@ export function atsFromUrl(url: string): Ats {
   if (h.includes("lever.co")) return "lever";
   if (h.includes("ashbyhq.com")) return "ashby";
   if (h.includes("myworkdayjobs.com") || h.includes("workday.com") || h.includes("wd1.") || h.includes("wd3.") || h.includes("wd5.")) return "workday";
-  if (h.includes("icims.com")) return "icims";
+  if (h.includes("icims.com") || /[?&]icims=1\b/.test(u)) return "icims";
   if (h.includes("smartrecruiters.com")) return "smartrecruiters";
   if (h.includes("jobvite.com")) return "jobvite";
   if (h.includes("rippling.com")) return "rippling";

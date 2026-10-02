@@ -3,15 +3,42 @@
  * might need (speculative fan-out). Code turns the typed answers into a
  * composite score, hard skips, and human-readable reasons.
  */
-import { FIT_WEIGHTS, LOCATION_MULTIPLIER, RECENCY_FLOOR, DISCOVER } from "../config.js";
+import { FIT_WEIGHTS, GRADUATION_MISMATCH_MULTIPLIER, LOCATION_MULTIPLIER, RECENCY_FLOOR, DISCOVER } from "../config.js";
 import type { JevClient } from "../jev/client.js";
 import { choice, noul, score, scoreToUnit } from "../jev/questions.js";
 import type { Answer, ChoiceAnswer, NoulAnswer, Questions, ScoreAnswer } from "../jev/types.js";
-import type { Profile } from "../profile/schema.js";
+import { monthName, type Profile } from "../profile/schema.js";
 import { locationTier, type LocationTier } from "./hardFilters.js";
 import { ageDays, type Job } from "./normalize.js";
 
 const LEVELS5 = ["None", "Weak", "Partial", "Strong", "Near exact"];
+
+/** The term criteria, worded for the candidate's own graduation year so the same code serves any class. */
+function termCriteria(gradMonth: number, gradYear: number): Record<string, string> {
+  const grad = `${monthName(gradMonth)} ${gradYear}`;
+  return {
+    summer: `Summer ${gradYear} internship or co-op (roughly May to August ${gradYear})`,
+    new_grad: `Full-time role a candidate graduating in ${grad} could start by mid ${gradYear}`,
+    winter: `Winter or Spring ${gradYear} term (January to April ${gradYear})`,
+    earlier: `Fall ${gradYear - 1} or starts before January ${gradYear}`,
+    other: "A different term, rolling with no term stated, or unclear",
+  };
+}
+
+/** Every question for one posting, with the term and graduation wording taken from the profile. */
+export function fitQuestions(profile: Pick<Profile, "education">): Questions {
+  const edu = profile.education[0];
+  const month = edu?.gradMonth ?? 4;
+  const year = edu?.gradYear ?? new Date().getUTCFullYear() + 1;
+  return {
+    ...FIT_QUESTIONS,
+    term: choice("Which term or start does this posting target?", termCriteria(month, year)),
+    graduation_excluded: noul(`Does the posting require a graduation date or year of study that a candidate graduating in ${monthName(month)} ${year} does not meet?`, {
+      true: `It names a graduation window, class year or "returning to school after" rule that excludes ${monthName(month)} ${year}`,
+      false: `No graduation requirement is stated, or ${monthName(month)} ${year} fits it`,
+    }),
+  };
+}
 
 export const FIT_QUESTIONS: Questions = {
   is_software_role: noul("Is this a software engineering or software developer role (writing application, backend, frontend, mobile, infrastructure or platform code)?", {
@@ -34,13 +61,8 @@ export const FIT_QUESTIONS: Questions = {
     remote_global: "Remote and open to candidates in any country",
     unclear: "Not stated and not inferable",
   }),
-  term: choice("Which term or start does this posting target?", {
-    summer_2027: "Summer 2027 internship or co-op (roughly May to August 2027)",
-    new_grad_2027: "Full-time role a candidate graduating in April 2027 could start by mid 2027",
-    winter_2027: "Winter or Spring 2027 term (January to April 2027)",
-    fall_2026: "Fall 2026 or starts before January 2027",
-    other: "A different term, rolling with no term stated, or unclear",
-  }),
+  term: choice("Which term or start does this posting target?", termCriteria(4, new Date().getUTCFullYear() + 1)),
+  graduation_excluded: noul("Does the posting require a graduation date or year of study the candidate does not meet?"),
   returning_student_required: noul("Does the posting require the candidate to return to school after the internship?"),
   stack_match: score("How well does the candidate's technical stack match what the posting asks for?", LEVELS5),
   experience_match: score("How well does the candidate's experience level and background match what the posting asks for?", LEVELS5),
@@ -86,7 +108,7 @@ export function buildFitState(job: Job, profile: Profile, now = new Date()): Rec
       summary: profile.summary,
       skills: profile.skills,
       facts: profile.facts,
-      graduation: "April 2027",
+      graduation: profile.education[0] ? `${monthName(profile.education[0].gradMonth)} ${profile.education[0].gradYear}` : "not given",
       citizenship: profile.workAuthorization.citizenships,
       authorized_to_work_in: profile.workAuthorization.authorizedCountries,
       preferred_locations: profile.preferences.preferredLocations,
@@ -95,12 +117,13 @@ export function buildFitState(job: Job, profile: Profile, now = new Date()): Rec
 }
 
 export async function rateJob(jev: JevClient, job: Job, profile: Profile, now = new Date()): Promise<FitResult> {
-  const answers = await jev.decide(buildFitState(job, profile, now), FIT_QUESTIONS, `rate:${job.company}:${job.title}`);
+  const answers = await jev.decide(buildFitState(job, profile, now), fitQuestions(profile), `rate:${job.company}:${job.title}`);
   return scoreFromAnswers(job, answers, now);
 }
 
 export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now = new Date()): FitResult {
-  const n = (k: string) => (answers[k] as NoulAnswer).noul;
+  // A rating saved before a question existed simply lacks it; that reads as "no".
+  const n = (k: string) => (answers[k] as NoulAnswer | undefined)?.noul ?? 0;
   const c = (k: string) => answers[k] as ChoiceAnswer;
   const s = (k: string) => answers[k] as ScoreAnswer;
   const reasons: string[] = [];
@@ -119,7 +142,7 @@ export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now 
   else if (n("requires_references") > 0.85) skipReason = "references required";
 
   const levelFit = { internship: 1, new_grad: 1, experienced: 0.1, other: 0.3 }[c("level").choice] ?? 0.3;
-  const termFit = { summer_2027: 1, new_grad_2027: 1, winter_2027: 0.8, fall_2026: 0.3, other: 0.5 }[c("term").choice] ?? 0.5;
+  const termFit = { summer: 1, new_grad: 1, winter: 0.8, earlier: 0.3, other: 0.5 }[c("term").choice] ?? 0.5;
   const components = {
     stackMatch: scoreToUnit(s("stack_match").score, LEVELS5.length),
     experienceMatch: scoreToUnit(s("experience_match").score, LEVELS5.length),
@@ -132,10 +155,13 @@ export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now 
   for (const [k, w] of Object.entries(FIT_WEIGHTS)) base += w * (components[k as keyof typeof components] ?? 0);
   const age = ageDays(job, now);
   const recency = age === null ? 0.85 : 1 - (1 - RECENCY_FLOOR) * Math.min(1, age / DISCOVER.maxAgeDays);
-  const scoreValue = Math.round(base * LOCATION_MULTIPLIER[tier] * recency * 1000) / 1000;
+  // The candidate may still apply, so a graduation window that excludes them lowers the rank instead of dropping the job.
+  const gradExcluded = n("graduation_excluded") > 0.7;
+  const scoreValue = Math.round(base * LOCATION_MULTIPLIER[tier] * recency * (gradExcluded ? GRADUATION_MISMATCH_MULTIPLIER : 1) * 1000) / 1000;
 
   if (c("work_auth").choice === "us_sponsors") reasons.push("US role, sponsorship offered");
   if (c("work_auth").choice === "unclear" && tier === "us") reasons.push("US role, sponsorship not stated");
+  if (gradExcluded) reasons.push("asks for a different graduation date");
   if (n("returning_student_required") > 0.6) reasons.push("may require returning to school after the term");
   if (n("interview_practical") > 0.6) reasons.push("practical interview process");
   reasons.push(`stack ${LEVELS5[Math.round(s("stack_match").score)] ?? ""}`.toLowerCase());
