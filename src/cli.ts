@@ -4,9 +4,10 @@
  * you can run them by hand too. Every command prints JSON with --json so
  * the output is machine-readable.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { Command } from "commander";
-import { loadEnv, DISCOVER, RUN } from "./config.js";
+import { loadEnv, DISCOVER, PATHS, RUN } from "./config.js";
 import { discover } from "./discover.js";
 import { JevClient } from "./jev/client.js";
 import { applyUrlFor } from "./jobs/normalize.js";
@@ -17,6 +18,11 @@ import { answerContext } from "./answers/context.js";
 import { mapForm } from "./forms/mapForm.js";
 import { decidePageState } from "./forms/pageState.js";
 import { FieldsDump } from "./forms/fields.js";
+import { ensureBrowser } from "./browser/cdp.js";
+import { closeJobTab, fillJob, inspect, loadReport, resolveJob, setValues, submitJob, type Fill, type FillReport } from "./browser/formRunner.js";
+import type { Job } from "./jobs/normalize.js";
+import { rememberWalledHost } from "./jobs/walled.js";
+import { logLines } from "./answers/resolve.js";
 
 loadEnv();
 const program = new Command();
@@ -127,6 +133,185 @@ program
     console.log(json);
   });
 
+type RunOptions = { count: number; dry?: boolean; json?: boolean };
+
+/** The jobs a run works on: the given ids, or the best queued ones. A real run marks them in progress; a rehearsal leaves the queue alone. */
+function takeJobs(ids: string[], o: RunOptions): QueueEntry[] {
+  const q = loadQueue();
+  if (ids.length) {
+    return ids.map((id) => {
+      const e = q.entries.find((x) => x.job.id === id);
+      if (!e) throw new Error(`No queue entry ${id}`);
+      return e;
+    });
+  }
+  if (o.dry) return sortEntries(q.entries.filter((e) => e.status === "queued")).slice(0, o.count);
+  const entries: QueueEntry[] = [];
+  for (let i = 0; i < o.count; i++) {
+    const e = nextQueued(q);
+    if (!e) break;
+    updateEntry(q, e.job.id, { status: "in_progress", attempts: e.attempts + 1 });
+    entries.push(e);
+  }
+  saveQueue(q);
+  return entries;
+}
+
+/** Fills every entry's form, side by side but never in a burst at one site. A form that cannot be opened comes back as blocked. */
+async function fillAll(entries: QueueEntry[]): Promise<FillReport[]> {
+  const profile = loadProfile();
+  const jev = new JevClient();
+  await ensureBrowser();
+  return paced(entries, (e) => hostOf(applyUrlFor(e.job as unknown as Job)), async (e) => {
+    try {
+      return await fillJob(jev, profile, e.job as unknown as Job);
+    } catch (err) {
+      return { jobId: e.job.id, company: e.job.company, title: e.job.title, ats: e.job.ats, url: e.job.url, state: "blocked", reason: err instanceof Error ? err.message : String(err), fields: [], drafts: [], reviews: [], failed: [], missingRequired: [], ready: false, seconds: 0, jevCostUsd: 0 };
+    }
+  });
+}
+
+/** Hands what JEV left open to Claude, a few forms at a time. A writer error leaves the form as it was, not ready. */
+async function resolveAll(reports: FillReport[]): Promise<FillReport[]> {
+  const profile = loadProfile();
+  const q = loadQueue();
+  const out = [...reports];
+  const todo = reports.map((r, i) => ({ r, i })).filter(({ r }) => r.state === "filled" && !r.ready);
+  for (let at = 0; at < todo.length; at += RUN.writerConcurrency) {
+    await Promise.all(
+      todo.slice(at, at + RUN.writerConcurrency).map(async ({ r, i }) => {
+        try {
+          out[i] = await resolveJob(profile, q.entries.find((e) => e.job.id === r.jobId) ?? null, r.jobId);
+        } catch (err) {
+          out[i] = { ...r, reason: `writer: ${err instanceof Error ? err.message : String(err)}` };
+        }
+      }),
+    );
+  }
+  return out;
+}
+
+/** Records an outcome in the queue and the CSV. */
+function record(id: string, status: QueueEntry["status"], reason: string | null, extra: Partial<Record<"What They Do" | "Why You're a Fit" | "Notes", string>> = {}): QueueEntry {
+  const q = loadQueue();
+  const e = updateEntry(q, id, { status, statusReason: reason, ...(status === "applied" ? { appliedAt: new Date().toISOString() } : {}) });
+  saveQueue(q);
+  saveRows(upsertEntry(loadRows(), e, extra));
+  return e;
+}
+
+program
+  .command("fill [ids...]")
+  .description("Open each job's form in the runner's Chrome window and fill it with JEV. Does not submit.")
+  .option("--count <n>", "with no ids: take this many jobs from the top of the queue", (v) => parseInt(v, 10), 1)
+  .option("--dry", "a rehearsal: leave the queue untouched and close each tab once it is filled")
+  .option("--json")
+  .action(async (ids: string[], o: RunOptions) => {
+    const reports = await fillAll(takeJobs(ids, o));
+    if (o.dry) for (const r of reports) await closeJobTab(r.jobId);
+    if (o.json) console.log(JSON.stringify(reports, null, 2));
+    else reports.forEach(printFill);
+  });
+
+program
+  .command("resolve <ids...>")
+  .description("Hand the fields JEV left open on filled forms to Claude (Sonnet 5.5, high effort), write its answers in and verify them")
+  .action(async (ids: string[]) => {
+    (await resolveAll(ids.map(loadReport))).forEach(printFill);
+  });
+
+program
+  .command("apply [ids...]")
+  .description("The whole loop: fill with JEV, resolve what is left with Claude, verify, and with --submit send every form that is ready")
+  .option("--count <n>", "with no ids: take this many jobs from the top of the queue", (v) => parseInt(v, 10), 1)
+  .option("--submit", "submit each form that ends up ready. Without it, forms are left open in the window for review")
+  .option("--dry", "a rehearsal: fill and resolve, record nothing, submit nothing, close the tabs")
+  .option("--json")
+  .action(async (ids: string[], o: RunOptions & { submit?: boolean }) => {
+    const reports = await resolveAll(await fillAll(takeJobs(ids, o)));
+    if (o.json) console.log(JSON.stringify(reports, null, 2));
+    else reports.forEach(printFill);
+    if (o.dry) {
+      for (const r of reports) await closeJobTab(r.jobId);
+      return;
+    }
+    const jev = new JevClient();
+    for (const r of reports) {
+      if (r.state === "blocked") {
+        const e = record(r.jobId, "blocked", r.reason);
+        // A login page teaches the next discover to skip that careers site.
+        if (/login or account|no form found, page looks like: (login_required|job_description)/.test(r.reason ?? "")) rememberWalledHost(e.job.url);
+        await closeJobTab(r.jobId);
+      } else if (r.resolution?.verdict === "skip") {
+        record(r.jobId, "skipped", r.resolution.reason);
+        await closeJobTab(r.jobId);
+      } else if (!r.ready) {
+        record(r.jobId, "needs_review", notReady(r));
+      } else if (o.submit) {
+        await submitAndRecord(jev, r.jobId, false);
+      }
+    }
+    const done = reports.map((r) => loadQueue().entries.find((e) => e.job.id === r.jobId)).filter((e): e is QueueEntry => !!e);
+    console.log(`\n${done.filter((e) => e.status === "applied").length} applied, ${done.filter((e) => e.status === "needs_review").length} need review, ${done.filter((e) => e.status === "blocked" || e.status === "skipped" || e.status === "failed").length} blocked, skipped or failed, ${done.filter((e) => e.status === "in_progress").length} filled and waiting for submit`);
+  });
+
+program
+  .command("survey")
+  .description("Totals over every fill report in data/runs: how many fields landed, and what did not")
+  .action(() => {
+    const reports = readdirSync(PATHS.runs).filter((f) => f.endsWith(".report.json")).map((f) => JSON.parse(readFileSync(path.join(PATHS.runs, f), "utf8")) as FillReport);
+    const t = { forms: 0, blocked: 0, fields: 0, landed: 0, failed: 0, reviews: 0, drafts: 0, emptyRequired: 0 };
+    for (const r of reports.sort((a, b) => a.ats.localeCompare(b.ats) || a.company.localeCompare(b.company))) {
+      const wanted = r.fields.filter((f) => f.action === "fill" || f.action === "upload");
+      const landed = wanted.filter((f) => f.shown).length;
+      t.forms++;
+      if (r.state === "blocked") t.blocked++;
+      t.fields += r.fields.length;
+      t.landed += landed;
+      t.failed += r.failed.length;
+      t.reviews += r.reviews.length;
+      t.drafts += r.drafts.length;
+      t.emptyRequired += r.missingRequired.length;
+      console.log(`${r.ats.padEnd(12)} ${r.company.slice(0, 22).padEnd(22)} ${r.title.slice(0, 38).padEnd(38)} ${r.state === "blocked" ? `blocked: ${r.reason}` : `${String(r.fields.length).padStart(3)} fields  ${landed}/${wanted.length} landed  ${r.failed.length} failed  ${r.reviews.length} review  ${r.drafts.length} draft  ${r.missingRequired.length} empty-required  ${r.seconds.toFixed(1)}s`}`);
+    }
+    console.log(`\n${t.forms} forms (${t.blocked} blocked), ${t.fields} fields: ${t.landed} landed, ${t.failed} failed, ${t.reviews} for review, ${t.drafts} to draft, ${t.emptyRequired} required still empty`);
+  });
+
+program
+  .command("set <id>")
+  .description("Write extra values into a form that fill opened: drafts and review decisions")
+  .requiredOption("--values <file>", "JSON array of { selector, kind, value }")
+  .action(async (id: string, o: { values: string }) => {
+    const fills = JSON.parse(readFileSync(o.values, "utf8")) as Fill[];
+    console.log(JSON.stringify(await setValues(loadProfile(), id, fills), null, 2));
+  });
+
+program
+  .command("inspect <id>")
+  .description("Show what a filled form holds right now, and any validation errors on the page")
+  .action(async (id: string) => {
+    const r = await inspect(id);
+    for (const f of r.fields) console.log(`${f.required ? "*" : " "} ${f.action.padEnd(6)} ${f.label.slice(0, 90).padEnd(90)} ${f.shown.slice(0, 80)}`);
+    if (r.errors.length) console.log(`errors: ${r.errors.join(" | ")}`);
+  });
+
+program
+  .command("submit <ids...>")
+  .description("Click Submit on ready forms, classify the result with JEV, and record applied ones")
+  .option("--keep-open", "leave the tab open after a confirmed submission")
+  .option("--force", "submit even though the form is not marked ready")
+  .action(async (ids: string[], o: { keepOpen?: boolean; force?: boolean }) => {
+    const jev = new JevClient();
+    for (const id of ids) await submitAndRecord(jev, id, !!o.force, !!o.keepOpen);
+  });
+
+program
+  .command("close <ids...>")
+  .description("Close the runner tabs of these jobs")
+  .action(async (ids: string[]) => {
+    for (const id of ids) await closeJobTab(id);
+  });
+
 program
   .command("page-state")
   .description("Classify a page's text: form, success, login, captcha, closed, error")
@@ -178,6 +363,86 @@ program
       for (const [r, n] of summary.topSkipReasons) console.log(`  ${String(n).padStart(4)}  ${r}`);
     });
   });
+
+const notReady = (r: FillReport) =>
+  r.resolution && r.resolution.verdict !== "ready" && r.resolution.reason
+    ? r.resolution.reason
+    : [...r.missingRequired.map((l) => `empty: ${l.slice(0, 60)}`), ...r.failed.map((f) => `did not land: ${f.label.slice(0, 60)}`), ...r.reviews.map((x) => `unsure: ${x.label.slice(0, 60)}`), ...r.drafts.map((x) => `unwritten: ${x.label.slice(0, 60)}`)].join("; ") || (r.reason ?? "not verified");
+
+/** Submits one ready form and records what the page became: applied, or failed with what the page said. */
+async function submitAndRecord(jev: JevClient, id: string, force: boolean, keepOpen = false): Promise<void> {
+  try {
+    const r = await submitJob(jev, id, force);
+    console.log(`${id}  ${r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
+    if (r.state === "submitted") {
+      const applied = record(id, "applied", null);
+      if (!keepOpen) await closeJobTab(id);
+      // The two sheet cells a person would otherwise write by hand.
+      const lines = await logLines(loadProfile(), applied);
+      if (lines.whatTheyDo || lines.whyFit) saveRows(upsertEntry(loadRows(), applied, { "What They Do": lines.whatTheyDo, "Why You're a Fit": lines.whyFit }));
+    } else {
+      if (r.errors.length) console.log(`  errors: ${r.errors.join(" | ")}`);
+      console.log(`  page: ${r.excerpt}`);
+      record(id, r.state === "captcha" || r.state === "login_required" ? "blocked" : "needs_review", `after submit the page was: ${r.state}${r.errors.length ? ` (${r.errors.slice(0, 3).join("; ").slice(0, 160)})` : ""}`);
+    }
+  } catch (err) {
+    console.log(`${id}  not submitted: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+};
+
+/** Runs work over items side by side, holding each site to RUN.perHostConcurrency at once and RUN.hostGapMs between starts. */
+async function paced<T, R>(items: T[], host: (item: T) => string, work: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  const todo = items.map((item, index) => ({ item, index }));
+  const sites = new Map<string, { active: number; last: number }>();
+  const worker = async () => {
+    while (todo.length) {
+      const now = Date.now();
+      const at = todo.findIndex(({ item }) => {
+        const s = sites.get(host(item));
+        const gentle = RUN.gentleHosts.some((h) => host(item).includes(h));
+        return !s || (s.active < (gentle ? 1 : RUN.perHostConcurrency) && now - s.last >= (gentle ? RUN.gentleGapMs : RUN.hostGapMs));
+      });
+      if (at < 0) {
+        await new Promise((r) => setTimeout(r, 200));
+        continue;
+      }
+      const [{ item, index }] = todo.splice(at, 1) as [{ item: T; index: number }];
+      const site = sites.get(host(item)) ?? { active: 0, last: 0 };
+      sites.set(host(item), { active: site.active + 1, last: Date.now() });
+      try {
+        results[index] = await work(item);
+      } finally {
+        const s = sites.get(host(item)) as { active: number; last: number };
+        s.active--;
+        // The pause counts from when a form finishes, not from when it started.
+        s.last = Date.now();
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(RUN.fillConcurrency, items.length) }, worker));
+  return results;
+}
+
+function printFill(r: FillReport) {
+  console.log(`\n== ${r.company} | ${r.title} [${r.jobId}] ${r.state === "filled" ? (r.ready ? "READY" : "filled, not ready") : "blocked"} in ${r.seconds.toFixed(1)}s, JEV $${r.jevCostUsd.toFixed(4)}`);
+  if (r.resolution) console.log(`   Claude: ${r.resolution.verdict}${r.resolution.reason ? `, ${r.resolution.reason}` : ""} (${r.resolution.answers.length} answers)`);
+  console.log(`   ${r.url}`);
+  if (r.reason) console.log(`   ${r.reason}`);
+  for (const f of r.fields) console.log(`   ${f.required ? "*" : " "} ${f.action.padEnd(6)} ${f.label.slice(0, 80).padEnd(80)} ${f.shown.slice(0, 70)}${f.note ? `  (${f.note})` : ""}`);
+  for (const d of r.drafts) console.log(`   DRAFT  ${d.selector}  intent=${d.intent} max=${d.maxLength ?? "-"}  ${d.label.slice(0, 200)}`);
+  for (const v of r.reviews) console.log(`   REVIEW ${v.selector}  [${v.kind}] ${v.label.slice(0, 160)}  why=${v.why}  options=${v.options.slice(0, 15).join(" | ")}`);
+  for (const f of r.failed) console.log(`   FAILED ${f.selector}  ${f.label.slice(0, 60)}: ${f.why}`);
+  if (r.missingRequired.length) console.log(`   EMPTY REQUIRED: ${r.missingRequired.map((l) => l.slice(0, 60)).join(" | ")}`);
+}
 
 function brief(e: QueueEntry) {
   return {
