@@ -34,12 +34,23 @@ const STYLE = `
   .letter .sig { margin-top: 18px; }
 `;
 
+/** "2026-05" or "2026-05-01" as "May 2026"; anything else as it is. */
+export const prettyMonth = (s: string) => {
+  const m = /^(\d{4})-(\d{2})/.exec(s.trim());
+  if (!m) return s;
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${names[Number(m[2]) - 1] ?? m[2]} ${m[1]}`;
+};
+const span = (start: string, end: string, current: boolean) => `${prettyMonth(start)} to ${current ? "present" : prettyMonth(end)}`;
+
 const contactLine = (profile: Profile) => {
   const bits = [profile.email, `${profile.phone.countryCode} ${profile.phone.national}`, `${profile.address.city}, ${profile.address.regionCode || profile.address.region}`];
   const links = Object.entries(profile.links ?? {}).filter(([, v]) => typeof v === "string" && v) as [string, string][];
   for (const [, url] of links) bits.push(url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""));
   return bits.map(escapeHtml).join(" &middot; ");
 };
+
+const monthYear = (month: number, year: number) => `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][month - 1] ?? ""} ${year}`.trim();
 
 const page = (title: string, body: string) => `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${STYLE}</style></head><body>${body}</body></html>`;
 
@@ -48,7 +59,7 @@ export function resumeHtml(profile: Profile, t: Tailored): string {
   const exp = t.experience
     .map((e) => {
       const src = profile.experience.find((x) => x.company.toLowerCase().includes(e.company.toLowerCase()) || e.company.toLowerCase().includes(x.company.toLowerCase()));
-      const when = src ? `${src.start} to ${src.current ? "present" : src.end}` : "";
+      const when = src ? span(src.start, src.end, src.current) : "";
       return `<div class="row"><div><strong>${escapeHtml(e.title)}</strong>, <span class="where">${escapeHtml(e.company)}${src?.location ? `, ${escapeHtml(src.location)}` : ""}</span></div><div class="when">${escapeHtml(when)}</div></div><ul>${e.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>`;
     })
     .join("");
@@ -56,11 +67,11 @@ export function resumeHtml(profile: Profile, t: Tailored): string {
     .map((p) => {
       const src = profile.projects.find((x) => x.name.toLowerCase().includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(x.name.toLowerCase()));
       const link = src?.link ? ` <span class="where">${escapeHtml(src.link.replace(/^https?:\/\/(www\.)?/, ""))}</span>` : "";
-      return `<div class="row"><div><strong>${escapeHtml(p.name)}</strong>${src?.role ? `, <span class="where">${escapeHtml(src.role)}</span>` : ""}${link}</div><div class="when">${escapeHtml(src ? `${src.start} to ${src.end}` : "")}</div></div><ul>${p.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>`;
+      return `<div class="row"><div><strong>${escapeHtml(p.name)}</strong>${src?.role ? `, <span class="where">${escapeHtml(src.role)}</span>` : ""}${link}</div><div class="when">${escapeHtml(src ? span(src.start, src.end, /present|current|now/i.test(src.end) || !src.end) : "")}</div></div><ul>${p.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>`;
     })
     .join("");
   const education = profile.education
-    .map((e) => `<div class="row"><div><strong>${escapeHtml(e.degree)}, ${escapeHtml(e.field)}</strong>${e.minor ? `, minor in ${escapeHtml(e.minor)}` : ""}, <span class="where">${escapeHtml(e.school)}</span></div><div class="when">${e.status === "in_progress" ? "expected " : ""}${escapeHtml(String(e.gradYear))}</div></div>`)
+    .map((e) => `<div class="row"><div><strong>${escapeHtml(e.degree)}, ${escapeHtml(e.field)}</strong>${e.minor ? `, minor in ${escapeHtml(e.minor)}` : ""}, <span class="where">${escapeHtml(e.school)}</span></div><div class="when">${escapeHtml(String(e.startYear))} to ${e.status === "in_progress" ? "expected " : ""}${escapeHtml(monthYear(e.gradMonth, e.gradYear))}</div></div>`)
     .join("");
   return page(
     `${name} resume`,

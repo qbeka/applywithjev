@@ -14,7 +14,14 @@ its own Next button, and every value is read back from the page before
 anything is sent. Your job is to run it, read what it reports, and tell the
 user what was left for them.
 
-Run every command from the repo root with `npx tsx src/cli.ts <command>`.
+Run every command from the repo root with `npx jev <command>`.
+
+## One posting the user found themselves
+
+`apply <link> --submit` takes a Greenhouse, Lever or Ashby posting link in
+place of an id: the posting is read from the board, rated, queued at the
+top and filled like any other. For a link on another board, tell the user
+the tool reads those three directly and that `discover` picks up the rest.
 
 ## Before the loop
 

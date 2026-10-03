@@ -62,7 +62,7 @@ describe("rendering", () => {
     t.headline = "<b>Intern</b> & more";
     const html = resumeHtml(profile, t);
     expect(html).toContain("&lt;b&gt;Intern&lt;/b&gt; &amp; more");
-    expect(html).toContain(first.start);
+    expect(html).toContain("May 2026");
     expect(html).toContain(profile.email);
     expect(resumeMarkdown(profile, t)).toContain(`**${first.title}**, ${first.company}`);
   });

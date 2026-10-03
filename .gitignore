@@ -15,10 +15,9 @@ applications/*
 data/queue.json
 data/cache/
 data/runs/
-data/resume/*
-!data/resume/README.md
+documents/*
+!documents/README.md
 data/imports/
-data/documents/
 
 # node
 node_modules/

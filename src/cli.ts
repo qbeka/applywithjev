@@ -24,6 +24,7 @@ import { formatCost, loadCost } from "./log/cost.js";
 import { appliedRecords, loadRows, manualRecords, saveRows, toRecord, upsertEntry } from "./log/csv.js";
 import { loadProfile } from "./profile/schema.js";
 import { setDocumentPolicy, tailorJob } from "./documents/tailor.js";
+import { addJob, looksLikeUrl } from "./jobs/addJob.js";
 import { endIfAbandoned, HUMAN_PREFIX, noteApplied, pipeline, recordApplied, resolvePage, submitAndRecord, takeJobs, waitsForYou } from "./run/pipeline.js";
 import { brief, printFill, printTable } from "./run/print.js";
 import { limiter } from "./util/pace.js";
@@ -75,6 +76,23 @@ program
 
 type ApplyOptions = { count: number; dry?: boolean; submit?: boolean; fresh?: boolean; json?: boolean; tailor?: boolean; cover?: boolean };
 
+/** A posting's link in place of an id is read, rated and queued first, so `apply <link> --submit` is one step. */
+async function idsFromLinks(given: string[]): Promise<string[]> {
+  const out: string[] = [];
+  let jev: JevClient | null = null;
+  for (const g of given) {
+    if (!looksLikeUrl(g)) {
+      out.push(g);
+      continue;
+    }
+    jev ??= new JevClient();
+    const e = await addJob(jev, loadProfile(), g);
+    console.log(`${e.job.id}  ${e.job.company} | ${e.job.title}  (fit ${e.fit?.score.toFixed(2) ?? "?"}${e.status === "applied" ? ", already applied" : ""})`);
+    out.push(e.job.id);
+  }
+  return out;
+}
+
 /** What this run does about documents: a tailored resume on request, a cover letter on request or when the profile says when_asked. */
 const documentsFromOptions = (o: { tailor?: boolean; cover?: boolean }) => {
   const cover = !!o.cover || loadProfile().preferences.coverLetter === "when_asked";
@@ -83,7 +101,7 @@ const documentsFromOptions = (o: { tailor?: boolean; cover?: boolean }) => {
 
 program
   .command("apply [ids...]")
-  .description("Fill each form, answer what is open, walk its pages, check every answer, and with --submit send every form that is ready")
+  .description("Fill each form, answer what is open, walk its pages, check every answer, and with --submit send every form that is ready. An id can also be a posting's link on Greenhouse, Lever or Ashby")
   .option("--count <n>", "with no ids: take this many jobs from the top of the queue", int, 1)
   .option("--submit", "send each form the moment it is ready. Without it, ready forms are left open in the window")
   .option("--dry", "a rehearsal: record nothing, send nothing, close the tabs")
@@ -91,8 +109,9 @@ program
   .option("--tailor", "write a resume for each job from your profile and attach that one instead of your file")
   .option("--cover", "also write a cover letter for a form that has a box for one, as a file or as text")
   .option("--json")
-  .action(async (ids: string[], o: ApplyOptions) => {
+  .action(async (given: string[], o: ApplyOptions) => {
     documentsFromOptions(o);
+    const ids = await idsFromLinks(given);
     const began = new Date().toISOString();
     const { reports, sent } = await pipeline(takeJobs(ids, { count: o.count, dry: !!o.dry }), { submit: !!o.submit, dry: !!o.dry, fresh: !!o.fresh, quiet: !!o.json });
     if (o.json) console.log(JSON.stringify(reports, null, 2));
@@ -126,7 +145,7 @@ program
 
 program
   .command("tailor <ids...>")
-  .description("Write a one-page resume, and with --cover a cover letter, for each job from your profile. Every claim is checked against the profile; the PDFs go to data/documents/<id>/")
+  .description("Write a one-page resume, and with --cover a cover letter, for each job from your profile. Every claim is checked against the profile; the PDFs go to documents/tailored/<Company>_<Role>_<id>/")
   .option("--cover", "also write a cover letter")
   .option("--fresh", "write again even when documents for this job exist")
   .option("--open", "open each PDF when it is written")

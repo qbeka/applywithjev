@@ -10,7 +10,7 @@ effort: high
 If `data/profile.json` does not exist, this is a first run: use the
 `/setup` skill instead.
 
-1. Run `npx tsx src/cli.ts doctor`. A schema error names the field to fix.
+1. Run `npx jev doctor`. A schema error names the field to fix.
 2. Ask what the user wants to change, or which answer on a form was wrong.
 3. Make the change in the right place:
 
@@ -24,8 +24,8 @@ If `data/profile.json` does not exist, this is a first run: use the
 
    The full list of questions the profile answers is in
    [../setup/questions.md](../setup/questions.md).
-4. Run `npx tsx src/cli.ts doctor` again, then rehearse the form that was
-   wrong: `npx tsx src/cli.ts apply --dry <job id>`.
+4. Run `npx jev doctor` again, then rehearse the form that was
+   wrong: `npx jev apply --dry <job id>`.
 
 Things to know:
 

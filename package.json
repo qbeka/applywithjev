@@ -4,15 +4,22 @@
   "private": true,
   "description": "Finds software internships and new-grad roles, rates them with JEV, fills and verifies each application in seconds, and submits it.",
   "type": "module",
-  "engines": { "node": ">=22" },
-  "bin": { "jev-job-search": "./src/cli.ts" },
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "jev": "./bin/jev.js",
+    "jev-job-search": "./bin/jev.js"
+  },
   "scripts": {
-    "cli": "tsx src/cli.ts",
+    "jev": "tsx src/cli.ts",
+    "setup": "tsx src/cli.ts doctor",
     "doctor": "tsx src/cli.ts doctor",
     "discover": "tsx src/cli.ts discover",
-    "status": "tsx src/cli.ts status",
     "apply": "tsx src/cli.ts apply",
+    "tailor": "tsx src/cli.ts tailor",
     "log": "tsx src/cli.ts log",
+    "status": "tsx src/cli.ts status",
     "test": "vitest run",
     "test:watch": "vitest",
     "check-types": "tsc --noEmit",

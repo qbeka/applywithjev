@@ -10,7 +10,7 @@ effort: high
 No browser needed. Run from the repo root:
 
 ```
-npx tsx src/cli.ts discover
+npx jev discover
 ```
 
 It prints counts and the top 50 queued jobs with scores. Takes about a
@@ -20,7 +20,7 @@ one costs less, because a posting that has not changed keeps its rating.
 Then show the user the top 15 as a short table (score, company, title,
 location, posted) and one line of totals. Mention jobs that were skipped for
 a reason they might want to override, grouped by reason, using
-`npx tsx src/cli.ts status`.
+`npx jev status`.
 
 Options:
 - `--no-boards` skips polling company boards (faster, fewer fresh postings).
@@ -30,5 +30,5 @@ To include the user's own tracking sheet, they export it as CSV into
 `data/imports/` first; every file there is read on the next discover.
 
 If it fails with an OPENROUTER_API_KEY error or a missing profile, run
-`npx tsx src/cli.ts doctor` and follow its next step, or use `/setup`. If a source fails, the run continues without it and says so
+`npx jev doctor` and follow its next step, or use `/setup`. If a source fails, the run continues without it and says so
 on stderr.

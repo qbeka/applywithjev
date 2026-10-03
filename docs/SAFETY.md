@@ -31,7 +31,7 @@ profile. The tool makes that the only way.
   is fictional.
 - The answer memory (`data/memory.json`) holds answers Claude wrote for you
   and the questions they answered. It never leaves the machine.
-  `npx tsx src/cli.ts memory --clear` empties it.
+  `npx jev memory --clear` empties it.
 - The OpenRouter key is read from `.env` only. Error bodies are redacted
   before they are printed (`src/jev/client.ts`).
 - What leaves the machine: job text and the profile's facts go to
@@ -46,7 +46,7 @@ profile. The tool makes that the only way.
 - A cookie banner is touched only when it covers the Submit button, and it
   is answered with its most private choice (necessary only, or reject).
   The tool never clicks "accept all".
-- Tailored resumes and cover letters (`data/documents/`) are written from
+- Tailored resumes and cover letters (`documents/tailored/`) are written from
   the profile only, checked in code for any number or name the profile does
   not hold, and git-ignored.
 - The runner's Chrome profile lives in `data/runs/chrome-profile`, apart

@@ -16,7 +16,7 @@ are listed in `.claude/skills/setup/questions.md`.
 At any point, this command lists what is in place and names the next step:
 
 ```bash
-npx tsx src/cli.ts doctor
+npx jev doctor
 ```
 
 Add `--online` to also make one tiny JEV call and one tiny Claude call,
@@ -71,10 +71,10 @@ important choices:
 - `summary`: three or four sentences; this is the candidate side of every
   fit rating, so say what you want, where, and when.
 
-Then put your resume at `data/resume/resume.pdf` and set `resume.path` to
-its absolute path, for example `/Users/you/jev-job-search/data/resume/resume.pdf`.
+Then put your resume at `documents/resume.pdf` and set `resume.path` to
+its absolute path, for example `/Users/you/jev-job-search/documents/resume.pdf`.
 
-Check it: `npx tsx src/cli.ts doctor` reads the profile and the resume; a
+Check it: `npx jev doctor` reads the profile and the resume; a
 schema error names the field to fix.
 
 ## 5. Your voice, your drafts, your standing answers
@@ -107,16 +107,16 @@ back into the sheet.
 ## 7. First discover
 
 ```bash
-npx tsx src/cli.ts discover
+npx jev discover
 ```
 
-About a minute. It prints totals and the top 50. `npx tsx src/cli.ts status`
+About a minute. It prints totals and the top 50. `npx jev status`
 shows skip reasons. `data/queue.json` and `applications/all.csv` now exist.
 
 ## 8. Rehearse, then apply
 
 ```bash
-npx tsx src/cli.ts apply --dry --count 5
+npx jev apply --dry --count 5
 ```
 
 A Chrome window opens. Five forms are filled and resolved, nothing is
@@ -125,13 +125,13 @@ per field with the value the page shows. Fix anything wrong in the profile
 and rehearse again.
 
 ```bash
-npx tsx src/cli.ts apply --count 5             # fill and verify, leave the forms open to look at
-npx tsx src/cli.ts submit <id> <id> ...        # send the ones you are happy with
-npx tsx src/cli.ts apply --count 10 --submit   # or do it all in one go
+npx jev apply --count 5             # fill and verify, leave the forms open to look at
+npx jev submit <id> <id> ...        # send the ones you are happy with
+npx jev apply --count 10 --submit   # or do it all in one go
 ```
 
 Stay near the computer: a "prove you are human" test or an emailed code is
-yours to handle, in the runner's window. `npx tsx src/cli.ts log` lists what you
+yours to handle, in the runner's window. `npx jev log` lists what you
 sent; the same list is `applications/applied.csv`, and
 `applications/all.csv` is the full record of every job considered. Inside
 Claude Code, `/apply` runs the same loop and deals with what needs a second
@@ -140,24 +140,24 @@ look.
 A rehearsal is not wasted work. The tool remembers the answers Claude wrote
 (`data/memory.json`), so the real run reuses them and does not ask Claude
 again. Changing your profile, drafts or voice guide makes it start over.
-`npx tsx src/cli.ts memory` shows what is remembered.
+`npx jev memory` shows what is remembered.
 
 ## 9. What the tool leaves for you
 
 - A job on a site that wants a sign-in, a form that asks for a signature,
   and a form with a required question your profile cannot answer are not
   sent. They are listed in `applications/manual.csv`,
-  each with the reason and the link. `npx tsx src/cli.ts log --manual`
+  each with the reason and the link. `npx jev log --manual`
   prints the list.
 - When a board emails you a code after you send, the filled form stays
-  open. `npx tsx src/cli.ts codes` brings each one to the front in turn.
+  open. `npx jev codes` brings each one to the front in turn.
   Type the code from your email, click Submit, and the tool records the
   application. The tool does not read or type the code.
 
 ## 10. What the tool learns
 
 After every form the tool notes how the site's controls took their values
-(`data/knowledge.json`). `npx tsx src/cli.ts knowledge` shows the notes.
+(`data/knowledge.json`). `npx jev knowledge` shows the notes.
 `knowledge --share` writes them into `knowledge/sites.json`, which you can
 commit and send as a pull request. The notes hold nothing about you.
 
@@ -173,9 +173,9 @@ Your `data/` files are untouched by updates.
 
 | Symptom | Fix |
 |---|---|
-| Not sure what is wrong | `npx tsx src/cli.ts doctor --online` names it |
+| Not sure what is wrong | `npx jev doctor --online` names it |
 | `OPENROUTER_API_KEY is not set` | Create `.env` as in step 3 |
-| An answer is stale after you changed something on the form by hand | `npx tsx src/cli.ts apply --fresh <id>`, or `memory --forget <company>` |
+| An answer is stale after you changed something on the form by hand | `npx jev apply --fresh <id>`, or `memory --forget <company>` |
 | `No profile at data/profile.json` | Step 4 |
 | `Chrome did not start on port 9333` | Install Google Chrome, or set `BROWSER.chromePath` in `src/config.ts` |
 | `could not run claude` | Install Claude Code and run `claude` once to log in, or put `ANTHROPIC_API_KEY` in `.env` |

@@ -5,7 +5,7 @@
  * the candidate did not make, and the document is refused. The method follows the drafter and
  * verifier workflow of MadsLorentzen/ai-job-search (MIT), redone here in code against the profile.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { DOCUMENTS, PATHS, WRITER } from "../config.js";
@@ -14,7 +14,7 @@ import { jobContext } from "../answers/context.js";
 import type { QueueEntry } from "../jobs/queue.js";
 import type { Profile } from "../profile/schema.js";
 import { hashOf } from "../util/cache.js";
-import { coverHtml, printPdf, resumeHtml } from "./render.js";
+import { coverHtml, prettyMonth, printPdf, resumeHtml } from "./render.js";
 
 export const Tailored = z.object({
   /** One line under the name: the role the candidate is applying for, in the posting's words. */
@@ -59,6 +59,16 @@ const SYSTEM = [
   "- Plain words. No hype, no em dashes, no exclamation marks, no first-person in the resume bullets.",
 ].join("\n");
 
+/** What the second pass is told to do with the first draft. It returns the same JSON shape, revised. */
+const REVIEW_RULES = [
+  "You are now the reviewer. Read the draft as the hiring manager for this posting would, then return the revised document in the same JSON shape.",
+  "Cut every sentence that says nothing specific. Each bullet starts with a verb and carries one fact. No bullet repeats another.",
+  "The summary leads with the one thing from the facts that best answers what this posting asks for, in plain words.",
+  "Skills: the posting's words first, then the rest; nothing the facts do not hold.",
+  "Cover letter: the first sentence names something specific about this posting or company, never 'I am applying for'. One paragraph ties two or three facts to the posting's own asks. The last paragraph says what the candidate wants to build there. Four paragraphs, each with something new.",
+  "Keep every number and name exactly as in the facts. Add nothing. Remove any claim the facts do not support.",
+];
+
 /** The claims a draft makes that the profile does not hold: numbers, and capitalized names of tools, places and companies. */
 export function unsupportedClaims(t: Tailored, profile: Profile, posting: string): string[] {
   const corpus = JSON.stringify({ e: profile.experience, p: profile.projects, s: profile.skills, f: profile.facts, su: profile.summary, ed: profile.education, n: profile.name, l: profile.links, a: profile.address, b: profile.answers }).toLowerCase();
@@ -97,11 +107,21 @@ export function unsupportedClaims(t: Tailored, profile: Profile, posting: string
   return [...bad];
 }
 
-export const documentsDir = (jobId: string) => path.join(PATHS.documents, jobId);
+/** A folder name a person can read: Company_Role_id, with anything that is not a letter or a digit folded to one underscore. */
+const slug = (s: string) => s.normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+export const documentsDir = (entry: Pick<QueueEntry, "job">) => path.join(PATHS.documents, `${slug(entry.job.company)}_${slug(entry.job.title)}_${entry.job.id}`);
+
+/** The folder of a job's tailored documents, found by the job id at the end of its name. */
+const findDir = (jobId: string): string | null => {
+  if (!existsSync(PATHS.documents)) return null;
+  const name = readdirSync(PATHS.documents).find((n) => n.endsWith(`_${jobId}`) || n === jobId);
+  return name ? path.join(PATHS.documents, name) : null;
+};
 
 /** The tailored documents on disk for a job, when they were written for the current profile, or null. */
 export function documentsFor(jobId: string, profile?: Profile): Documents | null {
-  const dir = documentsDir(jobId);
+  const dir = findDir(jobId);
+  if (!dir) return null;
   const json = path.join(dir, "tailored.json");
   if (!existsSync(json)) return null;
   try {
@@ -131,7 +151,7 @@ const parse = (text: string): Tailored => {
 /**
  * Writes the documents for one job: asks the writer, checks every claim against the profile (once
  * more with the unsupported ones named, if the first draft had any), renders the PDFs, and keeps
- * them under data/documents/<job id>/. Existing documents for the same profile are reused unless fresh.
+ * them under documents/tailored/<Company>_<Role>_<job id>/. Existing documents for the same profile are reused unless fresh.
  */
 export async function tailorJob(profile: Profile, entry: QueueEntry, opts: { cover: boolean; fresh?: boolean }): Promise<Documents & { tailored: Tailored; reused: boolean }> {
   const have = opts.fresh ? null : documentsFor(entry.job.id, profile);
@@ -144,6 +164,11 @@ export async function tailorJob(profile: Profile, entry: QueueEntry, opts: { cov
   const posting = `${entry.job.company} ${entry.job.title} ${entry.job.description ?? ""}`;
   let prompt = JSON.stringify({ job, write_cover_letter: opts.cover }, null, 1);
   let tailored = parse(await runWriter(prompt, system, { purpose: "tailor", jobId: entry.job.id }));
+  if (DOCUMENTS.review) {
+    // A second pass with fresh eyes, as a reviewer would read it: cuts filler, sharpens the opening, keeps every fact.
+    const reviewed = JSON.stringify({ job, write_cover_letter: opts.cover, draft_to_review: tailored, review_rules: REVIEW_RULES }, null, 1);
+    tailored = parse(await runWriter(reviewed, system, { purpose: "tailor", jobId: entry.job.id }));
+  }
   let claims = unsupportedClaims(tailored, profile, posting);
   if (claims.length) {
     prompt = JSON.stringify({ job, write_cover_letter: opts.cover, remove_these_claims_the_facts_do_not_support: claims, previous_draft: tailored }, null, 1);
@@ -151,7 +176,7 @@ export async function tailorJob(profile: Profile, entry: QueueEntry, opts: { cov
     claims = unsupportedClaims(tailored, profile, posting);
     if (claims.length) throw new Error(`the draft still claims what the profile does not say: ${claims.slice(0, 8).join(", ")}`);
   }
-  const dir = documentsDir(entry.job.id);
+  const dir = documentsDir(entry);
   mkdirSync(dir, { recursive: true });
   const resume = path.join(dir, "resume.pdf");
   // A resume over the page limit loses its last project bullets, then its last experience bullets, until it fits.
@@ -193,7 +218,7 @@ export function resumeMarkdown(profile: Profile, t: Tailored): string {
   const lines = [`# ${profile.name.first} ${profile.name.last}`, t.headline, "", t.summary, "", `**Skills:** ${t.skills.join(", ")}`, "", "## Experience"];
   for (const e of t.experience) {
     const src = profile.experience.find((x) => x.company.toLowerCase().includes(e.company.toLowerCase()) || e.company.toLowerCase().includes(x.company.toLowerCase()));
-    lines.push("", `**${e.title}**, ${e.company}${src ? ` (${src.start} to ${src.current ? "present" : src.end})` : ""}`);
+    lines.push("", `**${e.title}**, ${e.company}${src ? ` (${prettyMonth(src.start)} to ${src.current ? "present" : prettyMonth(src.end)})` : ""}`);
     for (const b of e.bullets) lines.push(`- ${b}`);
   }
   if (t.projects.length) {
@@ -204,6 +229,6 @@ export function resumeMarkdown(profile: Profile, t: Tailored): string {
     }
   }
   lines.push("", "## Education");
-  for (const e of profile.education) lines.push(`- ${e.degree}, ${e.field}, ${e.school}, ${e.gradYear}`);
+  for (const e of profile.education) lines.push(`- ${e.degree}, ${e.field}${e.minor ? `, minor in ${e.minor}` : ""}, ${e.school}, ${e.startYear} to ${e.status === "in_progress" ? "expected " : ""}${e.gradYear}`);
   return lines.join("\n") + "\n";
 }

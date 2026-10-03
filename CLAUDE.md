@@ -7,7 +7,7 @@ run it with a person in the loop: `/setup`, `/discover`, `/apply`,
 `/profile`.
 
 If `data/profile.json` does not exist, the person in front of you has not
-set the tool up. Offer `/setup` before anything else. `npx tsx src/cli.ts
+set the tool up. Offer `/setup` before anything else. `npx jev
 doctor` says what is in place and what to do next.
 
 ## What never changes

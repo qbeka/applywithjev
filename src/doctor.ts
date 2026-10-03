@@ -67,7 +67,7 @@ export function checkProfile(file: string = PATHS.profile): { check: Check; prof
 }
 
 export function checkResume(profile: Profile | null): Check {
-  const fix = "Put your resume PDF at data/resume/resume.pdf and set resume.path in data/profile.json to its full path";
+  const fix = "Put your resume PDF at documents/resume.pdf and set resume.path in data/profile.json to its full path";
   if (!profile) return { name: "Your resume", ok: false, detail: "needs the profile first", fix };
   const file = profile.resume.path;
   if (!existsSync(file)) return { name: "Your resume", ok: false, detail: `no file at ${file}`, fix };
@@ -86,7 +86,7 @@ export function checkOwnWords(): Check[] {
 }
 
 export function checkQueue(): Check {
-  const fix = "Run `npx tsx src/cli.ts discover` to find jobs";
+  const fix = "Run `npx jev discover` to find jobs";
   if (!existsSync(PATHS.queue)) return { name: "Job queue", ok: false, optional: true, detail: "no jobs found yet", fix };
   const q = loadQueue();
   const queued = q.entries.filter((e) => e.status === "queued").length;
@@ -146,7 +146,7 @@ export function nextStep(checks: Check[]): string {
   if (blocking) return blocking.fix;
   const optional = checks.find((c) => !c.ok && c.optional);
   if (optional) return optional.fix;
-  return "Everything is in place. Rehearse with `npx tsx src/cli.ts apply --dry --count 3`, then apply.";
+  return "Everything is in place. Rehearse with `npx jev apply --dry --count 3`, then apply.";
 }
 
 export const isReadyToRun = (checks: Check[]) => checks.every((c) => c.ok || c.optional);

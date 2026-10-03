@@ -11,14 +11,14 @@ The user should need to do four things: give you their resume, answer your
 questions, paste one key into a file, and say "go". You do everything else.
 
 Run every command from the repo root. After each step run
-`npx tsx src/cli.ts doctor --json`. It lists what is in place and names the
+`npx jev doctor --json`. It lists what is in place and names the
 next thing to do, so you never have to guess where you are. If the user
 stops halfway and comes back, start from what `doctor` says.
 
 ## 1. Install
 
 1. If `node_modules` is missing, run `npm install`.
-2. Run `npx tsx src/cli.ts doctor`. Fix what it names, in order:
+2. Run `npx jev doctor`. Fix what it names, in order:
    - Node.js older than 22, Google Chrome missing, or Claude Code missing:
      tell the user what to install and wait. You cannot install these.
      (You are running inside Claude Code, so it is present; a user who
@@ -30,7 +30,7 @@ stops halfway and comes back, start from what `doctor` says.
 
 1. Ask for the resume as a PDF. The user can drag the file into the chat or
    give its path.
-2. Copy it to `data/resume/resume.pdf`.
+2. Copy it to `documents/resume.pdf`.
 3. Read the PDF. It is your first source for the profile.
 
 ## 3. The profile
@@ -56,7 +56,7 @@ Rules for this step:
 
 - Never invent or round a fact. If you are not sure, ask.
 - Never guess a demographic answer. Every one of them can be declined.
-- `resume.path` is the absolute path of `data/resume/resume.pdf`.
+- `resume.path` is the absolute path of `documents/resume.pdf`.
 - These files are git-ignored. Never commit them and never paste their
   contents into a file that is tracked.
 
@@ -84,7 +84,7 @@ months.
    text editor.
 3. Ask them to paste the key after `OPENROUTER_API_KEY=`, save, and tell you
    when it is done.
-4. Run `npx tsx src/cli.ts doctor --online`. It makes one tiny JEV call and
+4. Run `npx jev doctor --online`. It makes one tiny JEV call and
    one tiny Claude call to prove both work.
 
 Never ask the user to paste the key into the chat, and never print it. If
@@ -93,10 +93,10 @@ openrouter.ai/keys and create a new one, because a key in a chat is exposed.
 
 ## 6. Find jobs
 
-Run `npx tsx src/cli.ts discover`. It takes about a minute. Show the top 15
+Run `npx jev discover`. It takes about a minute. Show the top 15
 as a short table: score, company, role, location, date posted. Say how many
 jobs are queued and name the main reasons jobs were skipped
-(`npx tsx src/cli.ts status`).
+(`npx jev status`).
 
 If the user wants other locations or kinds of roles than the ranking
 prefers, the settings are in `src/config.ts` (`LOCATION_MULTIPLIER`,
@@ -104,7 +104,7 @@ prefers, the settings are in `src/config.ts` (`LOCATION_MULTIPLIER`,
 
 ## 7. Rehearse
 
-1. Run `npx tsx src/cli.ts apply --dry --count 3`. A Chrome window opens,
+1. Run `npx jev apply --dry --count 3`. A Chrome window opens,
    three forms are filled, nothing is sent, and the tabs close.
 2. Show the user every answer, grouped by form. Point out anything the tool
    held and why.
@@ -122,7 +122,7 @@ Ask two questions: how many applications to send now, and whether to send
 them without stopping at each one. Then follow the `/apply` skill. Nothing
 is sent before the user says so in their own words.
 
-When the run ends, show `npx tsx src/cli.ts log` and tell them where the
+When the run ends, show `npx jev log` and tell them where the
 records are: the `applications/` folder at the top of the project, where
 `applied.csv` lists what was sent and `manual.csv` lists the jobs the tool
 left for them with the reason and the link.
@@ -130,5 +130,5 @@ left for them with the reason and the link.
 Tell them two things the tool will not do, so they are not surprised: it
 does not sign in to any site, and it does not pass a "prove you are human"
 check. Jobs behind a sign-in go on the by-hand list. A form waiting for an
-emailed code stays open, and `npx tsx src/cli.ts codes` walks them through
+emailed code stays open, and `npx jev codes` walks them through
 those.

@@ -10,14 +10,14 @@ effort: high
 The CLI does the writing. Run from the repo root:
 
 ```
-npx tsx src/cli.ts tailor <job id> [<job id> ...] [--cover] [--fresh] [--open]
+npx jev tailor <job id> [<job id> ...] [--cover] [--fresh] [--open]
 ```
 
 It asks the writer for a one-page resume (and, with `--cover`, a one-page
 cover letter) built from the profile and the posting, checks every number
 and every capitalized name in the draft against the profile, renders the
 PDFs through the runner's own Chrome, and keeps them in
-`data/documents/<job id>/`: `resume.pdf`, `resume.md`, `cover.pdf`,
+`documents/tailored/<Company>_<Role>_<job id>/`: `resume.pdf`, `resume.md`, `cover.pdf`,
 `tailored.json`.
 
 A job id comes from `queue` or `log`. A draft that claims what the profile

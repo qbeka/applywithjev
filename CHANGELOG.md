@@ -11,7 +11,21 @@ changed for a person using the tool and what changed for a contributor.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- `npx jev <command>`: a `jev` command in place of `npx tsx src/cli.ts`.
+- `apply <link>`: a Greenhouse, Lever or Ashby posting link in place of a
+  job id is read from the board, rated, queued and filled.
+- Tailored documents get a reviewer pass (`DOCUMENTS.review`): a second
+  writer call reads the draft as a hiring manager would and tightens it,
+  then the truth gate runs on the result. Dates print as "May 2026";
+  education shows its span.
+- `documents/` at the top of the project holds your resume, your
+  transcript and the tailored pairs (`documents/tailored/<Company>_<Role>_<id>/`).
+  `data/resume/` and `data/documents/` are gone.
+- README rewritten in the structure of MadsLorentzen/ai-job-search: what
+  it is, prerequisites, a five-step quick start, other commands, file
+  structure, how `/apply` works, customization, costs, tips. The long
+  detail moved to `docs/USAGE.md`.
 
 ## [1.0.0] - 2026-10-02
 

@@ -21,13 +21,13 @@ Node 22 (`.nvmrc`). No build step; everything runs through `tsx`.
 - A new kind of form control: `src/forms/dumpFields.js` (capture it, and
   name its `widget`), `src/forms/fillFields.js` or `src/forms/pageHelpers.js`
   (set it and read it back), `src/browser/fill.ts` (the way it is written),
-  `src/forms/mapForm.ts` (ask JEV about it). `npx tsx src/cli.ts knowledge
+  `src/forms/mapForm.ts` (ask JEV about it). `npx jev knowledge
   --trouble` lists the controls nobody has taught the tool yet.
-- What your own runs learned about sites: `npx tsx src/cli.ts knowledge
+- What your own runs learned about sites: `npx jev knowledge
   --share`, then commit `knowledge/sites.json`. It holds site names and
   kinds of controls, and nothing about you.
 - A form that was filled wrongly: rehearse it with
-  `npx tsx src/cli.ts apply --dry <id>`, fix the cause, and rehearse again.
+  `npx jev apply --dry <id>`, fix the cause, and rehearse again.
   `AWJ_TRACE=1` prints step timings and the page's own saves.
 - A new thing JEV should decide: write the question with criteria that are
   definitions, add it next to its siblings, and document it in

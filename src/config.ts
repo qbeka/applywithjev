@@ -47,9 +47,10 @@ export const PATHS = {
   jevUsage: path.join(ROOT, "data", "runs", "jev-usage.jsonl"),
   writerUsage: path.join(ROOT, "data", "runs", "writer-usage.jsonl"),
   imports: path.join(ROOT, "data", "imports"),
-  /** Tailored resumes and cover letters, one folder per job: data/documents/<job id>/. */
-  documents: path.join(ROOT, "data", "documents"),
-  resumeDir: path.join(ROOT, "data", "resume"),
+  /** Tailored resumes and cover letters, one folder per job: documents/tailored/<Company>_<Role>_<job id>/. */
+  documents: path.join(ROOT, "documents", "tailored"),
+  /** The person's own files, at the top of the project: the resume to send, a transcript, and the tailored pairs under tailored/. */
+  documentsDir: path.join(ROOT, "documents"),
   browserScripts: path.join(ROOT, "src", "forms"),
 } as const;
 
@@ -248,6 +249,8 @@ export const WRITER = {
 export const DOCUMENTS = {
   /** Writing a resume deserves more thought than finishing a form field. */
   effort: "high",
+  /** A second writer pass that reads the first draft as a reviewer and tightens it. Twice the writer calls per job. */
+  review: true,
   /** The most skills the tailored resume lists. */
   maxSkills: 14,
   /** Bullets per experience or project entry on the tailored resume, at most. */
