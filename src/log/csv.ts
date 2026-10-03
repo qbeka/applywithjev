@@ -112,7 +112,7 @@ export function takehomeRecords(rows: Row[]): TakehomeRecord[] {
     .filter((r) => r["App. Status"] === "Applied" && r["Take-home"])
     .map((r) => {
       const [link = "", ...rest] = r["Take-home"].split(" | ");
-      return { applied_on: localDate(r["Applied On"]), company: r.Company, role: r["Role / Title"], takehome_link: link, instructions: rest.join(" | "), job_link: r["Job Link"], job_id: r["Job ID"] };
+      return { applied_on: r["Applied On"], company: r.Company, role: r["Role / Title"], takehome_link: link, instructions: rest.join(" | "), job_link: r["Job Link"], job_id: r["Job ID"] };
     });
 }
 
