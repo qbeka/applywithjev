@@ -28,6 +28,17 @@ your own Claude API key. The only separate bill is JEV, through OpenRouter:
 about 1 to 1.5 cents for every 10 applications, and 7 to 9 cents for each
 search. See [What it costs](#what-it-costs).
 
+## Does it work?
+
+It is how I run my own search. Over 1 and 2 October 2026 it sent 118
+applications for me across Ashby, Lever, Workable, Rippling, BambooHR,
+Jobvite and JazzHR forms, for $1.43 in JEV, while I fixed what it got wrong
+on each new kind of form. Every answer on every one of those forms was read
+back from the page before it was sent, and every form it could not finish
+truthfully is in `applications/manual.csv` with the reason. The numbers it
+reports about itself are in [How well it works](#how-well-it-works). I will
+add what came of the applications once I know.
+
 ## Start in three steps
 
 You need a Mac with Google Chrome, [Node.js](https://nodejs.org) 22 or
@@ -542,6 +553,39 @@ Claude Code changes any of them with you.
   once, how fast the tool works on each site, which Claude model writes,
   and whether the tool remembers answers.
 
+## A resume and a cover letter written for the job
+
+Off by default: your applications carry the resume file in your profile.
+Turn it on and the tool writes a one-page resume for each job from your
+profile and the posting, and attaches that one instead.
+
+```bash
+npx tsx src/cli.ts tailor <job id> --cover --open
+npx tsx src/cli.ts apply --count 10 --submit --tailor --cover
+```
+
+- `tailor` writes the documents for a job and shows you the PDFs. `apply
+  --tailor` writes one per job as it goes. `apply --cover` also writes a
+  cover letter wherever a form has a box for one, and uploads it or pastes
+  it. Set `coverLetter` to `"when_asked"` in your profile to make that the
+  default.
+- The resume is built from your own bullets, reordered and cut for the
+  posting, with the posting's keywords used where your profile has the same
+  thing. The cover letter names one specific thing from the posting and ties
+  two or three of your facts to it.
+- **Nothing is invented.** Every number and every name of a tool, a place or
+  a company in the draft is checked against your profile in code. A draft
+  that claims something your profile does not say is sent back once with
+  the claims named, and refused if it still does. The keywords the posting
+  wants and your profile cannot support are listed for you, not stuffed in.
+- The PDFs are rendered by the tool's own Chrome, so there is nothing to
+  install. They live in `data/documents/<job id>/` with the resume as
+  Markdown next to it, git-ignored.
+
+The method follows the drafter and verifier workflow of
+[MadsLorentzen/ai-job-search](https://github.com/MadsLorentzen/ai-job-search)
+(MIT), redone here in code against the profile instead of as a prompt.
+
 ## Claude Code or the Claude API
 
 The tool reaches Claude in one of two ways. Both run the same model and
@@ -566,8 +610,9 @@ Run each command as `npx tsx src/cli.ts <command>`.
 | `doctor [--online]` | Checks your setup and names the next step |
 | `discover [--max-age days]` | Finds and ranks jobs. `--max-age` also takes older postings, for one search |
 | `queue` | Lists the ranked jobs |
-| `apply [ids] [--count N] [--submit] [--dry] [--fresh]` | Fills each form, page by page, checks every answer and, with `--submit`, sends each form the moment it is ready. `--dry` is a rehearsal. `--fresh` ignores remembered answers |
+| `apply [ids] [--count N] [--submit] [--dry] [--fresh] [--tailor] [--cover]` | Fills each form, page by page, checks every answer and, with `--submit`, sends each form the moment it is ready. `--dry` is a rehearsal. `--fresh` ignores remembered answers. `--tailor` and `--cover` attach documents written for the job |
 | `fill [ids] [--count N] [--dry]` | Fills the first page of each form and stops |
+| `tailor <ids> [--cover] [--fresh] [--open]` | Writes a one-page resume, and a cover letter, for each job from your profile. See [A resume and a cover letter written for the job](#a-resume-and-a-cover-letter-written-for-the-job) |
 | `resolve <ids>` | Answers what is still open on filled forms |
 | `submit <ids>` | Sends forms that are ready |
 | `codes` | Shows each form that is waiting for you (an emailed code, or a robot check), one at a time, and records it once you have sent it |
@@ -607,10 +652,10 @@ enforces it.
 | `applications/` | Your records: `applied.csv`, `manual.csv`, `takehome.csv`, `all.csv`. Git-ignored except the README and the example. |
 | `data/` | Your profile, drafts, voice guide, resume, queue and caches. Git-ignored except the examples. |
 | `knowledge/` | What runs have learned about job sites, shared through the repo. No personal data. |
-| `src/` | The program: `cli.ts`, `config.ts` (every setting), `run/` (the apply loop), `browser/` (Chrome), `forms/` (reading and filling pages), `answers/` (the writer and the memory), `jobs/` and `sources/` (finding and rating), `knowledge/`, `log/` |
+| `src/` | The program: `cli.ts`, `config.ts` (every setting), `run/` (the apply loop), `browser/` (Chrome), `forms/` (reading and filling pages), `answers/` (the writer and the memory), `documents/` (tailored resumes and cover letters), `jobs/` and `sources/` (finding and rating), `knowledge/`, `log/` |
 | `tests/` | Offline tests on captured, scrubbed fixtures |
 | `docs/` | Setup, architecture, JEV, sources, safety |
-| `.claude/skills/` | `/setup`, `/discover`, `/apply`, `/profile` |
+| `.claude/skills/` | `/setup`, `/discover`, `/apply`, `/tailor`, `/profile` |
 
 ## What is planned
 

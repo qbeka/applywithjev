@@ -33,7 +33,10 @@ doctor` says what is in place and what to do next.
   resume always hold it.
 - **The right file in the right box.** A file box gets the resume only when
   it asks for the resume (`fileBoxWants`). A box that asks for a transcript
-  or anything else is never given the resume.
+  or anything else is never given the resume. A tailored resume or cover
+  letter (`src/documents/`) is used only when the run asked for it, and only
+  after `unsupportedClaims` found nothing in it that the profile does not
+  say. Never loosen that check to get a document through.
 - **Never sign in, never type into a login.** A page with a password box
   is blocked: the tab is closed, the job goes on the by-hand list
   (`applications/manual.csv`), and the site is noted so the next discover skips it. The

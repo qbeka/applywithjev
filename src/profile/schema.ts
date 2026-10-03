@@ -124,7 +124,8 @@ export const ProfileSchema = z.object({
     howDidYouHear: z.string(),
     /** What to do when a form requires references. "skip" logs and moves on. */
     references: z.enum(["skip"]),
-    coverLetter: z.enum(["never"]),
+    /** "never" skips a form that requires one. "when_asked" writes a cover letter for this job whenever a form has a box for one, as if apply --cover. */
+    coverLetter: z.enum(["never", "when_asked"]),
   }),
   resume: z.object({
     /** Absolute path on the machine that runs the browser. */

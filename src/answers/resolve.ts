@@ -7,7 +7,7 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { z } from "zod";
-import { PATHS, WRITER, writerBackend } from "../config.js";
+import { DOCUMENTS, PATHS, WRITER, writerBackend } from "../config.js";
 import type { QueueEntry } from "../jobs/queue.js";
 import type { Profile } from "../profile/schema.js";
 import { BANK_DRAFTS, BANK_INTENTS } from "./bank.js";
@@ -124,7 +124,7 @@ export async function logNotes(profile: Profile, entries: QueueEntry[]): Promise
   return out;
 }
 
-export type WriterCall = { at: string; purpose: "resolve" | "log"; jobId: string; model: string; inputTokens: number; cacheWriteTokens: number; cacheReadTokens: number; outputTokens: number; costUsd: number; ms: number };
+export type WriterCall = { at: string; purpose: "resolve" | "log" | "tailor"; jobId: string; model: string; inputTokens: number; cacheWriteTokens: number; cacheReadTokens: number; outputTokens: number; costUsd: number; ms: number };
 
 /** What the writer has used in this process. costUsd is what the calls would cost at API prices; on a Claude subscription they draw on the plan instead. */
 export const writerUsage = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
@@ -163,7 +163,7 @@ function recordWriterCall(envelope: Envelope, meta: { purpose: WriterCall["purpo
  * while it is still running would each pay to store it again, so they wait for it and then read it.
  */
 let warming: Promise<unknown> | null = null;
-async function runWriter(prompt: string, system: string, meta: { purpose: WriterCall["purpose"]; jobId: string }): Promise<string> {
+export async function runWriter(prompt: string, system: string, meta: { purpose: WriterCall["purpose"]; jobId: string }): Promise<string> {
   if (meta.purpose !== "resolve") return callWriter(prompt, system, meta);
   if (warming) {
     await warming;
@@ -173,6 +173,9 @@ async function runWriter(prompt: string, system: string, meta: { purpose: Writer
   warming = first.catch(() => undefined);
   return first;
 }
+
+/** Finishing a form field is quick work; writing a resume is not. */
+const effortFor = (purpose: WriterCall["purpose"]): string => (purpose === "tailor" ? DOCUMENTS.effort : WRITER.effort);
 
 /** The shape of a Claude API reply, as far as the writer reads it. */
 const ApiReply = z.object({
@@ -220,7 +223,7 @@ function callWriter(prompt: string, system: string, meta: { purpose: WriterCall[
     mkdirSync(WRITER.cwd, { recursive: true });
     const child = spawn(
       WRITER.command,
-      ["-p", "--model", WRITER.model, "--effort", WRITER.effort, "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config", "--system-prompt", system],
+      ["-p", "--model", WRITER.model, "--effort", effortFor(meta.purpose), "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config", "--system-prompt", system],
       { stdio: ["pipe", "pipe", "pipe"], cwd: WRITER.cwd, env: { ...process.env, ...WRITER.env } },
     );
     let out = "";

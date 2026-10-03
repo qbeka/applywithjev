@@ -18,6 +18,7 @@ data/runs/
 data/resume/*
 !data/resume/README.md
 data/imports/
+data/documents/
 
 # node
 node_modules/

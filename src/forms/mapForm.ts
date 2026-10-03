@@ -20,6 +20,8 @@ import { BANK_INTENTS } from "../answers/bank.js";
 import { locationTier } from "../jobs/hardFilters.js";
 import type { Job } from "../jobs/normalize.js";
 import type { DumpedField, FieldsDump, FillPlan, PlannedField } from "./fields.js";
+import { documentPolicy, documentsFor, tailorJob } from "../documents/tailor.js";
+import { loadQueue } from "../jobs/queue.js";
 
 const NONE = "__none__";
 
@@ -245,7 +247,8 @@ export async function mapForm(jev: JevClient, profile: Profile, job: Job, dump: 
   plans ??= new KeyedCache<FillPlan>(PATHS.plans, "all", CACHE.maxPlans);
   // The values a form happens to hold (an earlier fill, an autofill) do not change what belongs in it.
   const fields = dump.fields.map(({ value: _value, checked: _checked, ...rest }) => rest);
-  const key = hashOf({ fields, submit: dump.submitSelectors, state: buildFormState(profile, job, { ...dump, url: "" }, []), form: FORM });
+  // A plan made with the profile's resume is not the plan for a run that wants a tailored one, and the other way round.
+  const key = hashOf({ fields, submit: dump.submitSelectors, state: buildFormState(profile, job, { ...dump, url: "" }, []), form: FORM, documents: documentPolicy() });
   const hit = plans.get(key);
   if (hit) return { ...hit, jobId: job.id, url: dump.url, jevCostUsd: 0 };
   const plan = await mapFormFresh(jev, profile, job, dump);
@@ -265,6 +268,21 @@ async function mapFormFresh(jev: JevClient, profile: Profile, job: Job, dump: Fi
       planned.push(p);
       resolvedInCode.add(f.id);
     }
+  });
+  // Tailored documents, when the person asked for them: the resume written for this job goes in the resume box,
+  // and a cover letter is written when the form has a box for one, as a file or as text.
+  const coverBox = dump.fields.some((f) => COVER_LABEL.test(`${f.label} ${f.name} ${f.hint}`));
+  const policy = documentPolicy();
+  let docs = documentsFor(job.id, profile);
+  if ((policy.resume && !docs) || (policy.cover && coverBox && !docs?.coverText)) {
+    const entry = loadQueue().entries.find((e) => e.job.id === job.id);
+    if (entry) docs = await tailorJob(profile, entry, { cover: policy.cover && coverBox });
+  }
+  const coverText = policy.cover ? (docs?.coverText ?? null) : null;
+  dump.fields.forEach((f) => {
+    if (f.kind !== "textarea" || resolvedInCode.has(f.id) || !coverText || !COVER_LABEL.test(`${f.label} ${f.name} ${f.hint}`)) return;
+    planned.push({ id: f.id, selector: f.selector, kind: f.kind, label: f.label, required: f.required, optionLabel: null, action: "fill", key: "cover_letter", value: f.maxLength ? coverText.slice(0, f.maxLength) : coverText, confidence: 1, note: "the cover letter written for this job" });
+    resolvedInCode.add(f.id);
   });
   const askable = dump.fields.filter((f) => f.kind !== "file" && !resolvedInCode.has(f.id));
   // A chunk too large for JEV's context (long questions, long option lists) is halved and asked again.
@@ -292,12 +310,16 @@ async function mapFormFresh(jev: JevClient, profile: Profile, job: Job, dump: Fi
     const want = i === unnamedResume ? "resume" : wants[i];
     // The one transcript on file is the undergraduate one unless the profile holds a graduate degree.
     const graduate = profile.education.some((e) => /master|\bm\.?sc?\b|\bmba\b|ph\.?d|doctor/i.test(e.degree));
-    const file = want === "resume" ? profile.resume.path : want === "transcript" || (want === "graduate_transcript" && graduate) ? (profile.transcript?.path ?? null) : null;
+    const file =
+      want === "resume" ? (policy.resume && docs ? docs.resume : profile.resume.path)
+      : want === "cover" ? (policy.cover && docs?.cover ? docs.cover : null)
+      : want === "transcript" || (want === "graduate_transcript" && graduate) ? (profile.transcript?.path ?? null)
+      : null;
     planned.push({
       id: f.id, selector: f.selector, kind: f.kind, label: f.label, required: f.required,
       action: file ? "upload" : "skip", key: want === "resume" ? "resume_upload" : "leave_blank",
       value: file, optionLabel: null, confidence: 1,
-      note: file ? null : want === "autofill" ? "autofill helper, skipped so it does not overwrite the plan" : want === "transcript" ? "asks for a transcript. Set transcript.path in your profile to attach one" : want === "graduate_transcript" ? "asks for a graduate transcript, and the profile has no graduate degree" : "not a resume upload",
+      note: file ? (want === "resume" && file !== profile.resume.path ? "the resume written for this job" : want === "cover" ? "the cover letter written for this job" : null) : want === "autofill" ? "autofill helper, skipped so it does not overwrite the plan" : want === "transcript" ? "asks for a transcript. Set transcript.path in your profile to attach one" : want === "graduate_transcript" ? "asks for a graduate transcript, and the profile has no graduate degree" : want === "cover" ? "asks for a cover letter. Run apply --cover to write one" : "not a resume upload",
     });
   });
   const ordered = dump.fields.map((f) => planned.find((p) => p.id === f.id) as PlannedField);
@@ -396,9 +418,13 @@ export function planField(f: DumpedField, answer: Answer | undefined, profile: P
 }
 
 /** Which document a file box asks for, from its question, its name and its hint. The resume is never put in a box that asks for something else. */
-export function fileBoxWants(f: Pick<DumpedField, "label" | "name" | "hint" | "selector">): "resume" | "transcript" | "graduate_transcript" | "autofill" | "other" | "unnamed" {
+/** A box that asks for a cover letter, as a file or as text. */
+export const COVER_LABEL = /cover\s*letter|covering letter|letter of (motivation|interest|application)|motivation letter/i;
+
+export function fileBoxWants(f: Pick<DumpedField, "label" | "name" | "hint" | "selector">): "resume" | "cover" | "transcript" | "graduate_transcript" | "autofill" | "other" | "unnamed" {
   const text = `${f.label} ${f.name} ${f.hint} ${f.selector}`;
   if (/autofill|auto-fill|parse|prefill/i.test(text)) return "autofill";
+  if (COVER_LABEL.test(text)) return "cover";
   if (/transcript/i.test(text)) return /\b(graduate|master|phd|doctoral)\b/i.test(text) && !/undergraduate/i.test(text) ? "graduate_transcript" : "transcript";
   if (/resume|résumé|\bcv\b|curriculum/i.test(text)) return "resume";
   if (/cover|letter|portfolio|photo|picture|certificate|writing sample|work sample|reference|other|additional/i.test(text)) return "other";

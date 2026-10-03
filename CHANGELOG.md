@@ -1,7 +1,13 @@
 # Changelog
 
 All notable changes to this project are recorded here. The format follows
-Keep a Changelog and the project uses Conventional Commits.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the project uses
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html) and Conventional
+Commits.
+
+Releases are vetted checkpoints of `main`. If you run your own copy, update
+to a tagged release rather than to raw `main`; each release's notes say what
+changed for a person using the tool and what changed for a contributor.
 
 ## [Unreleased]
 
@@ -74,6 +80,12 @@ Keep a Changelog and the project uses Conventional Commits.
 - The writer runs at low effort instead of high: the same model, fewer
   thinking tokens per call, so a run draws less on a subscription's
   allowance.
+- Tailored documents (`src/documents/`, `tailor` command, `apply --tailor
+  --cover`, `/tailor` skill): a one-page resume and a cover letter written
+  per job from the profile and the posting, every number and name checked
+  against the profile in code, rendered to PDF by the runner's own Chrome.
+  Off by default. The method follows MadsLorentzen/ai-job-search (MIT).
+- The project is now called jev-job-search.
 - Your records live in one folder, `applications/`: `applied.csv`,
   `manual.csv`, `takehome.csv` and `all.csv` (was `data/applications.csv`).
   The folder has a README and is git-ignored apart from it and the example.

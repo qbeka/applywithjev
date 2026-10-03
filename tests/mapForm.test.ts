@@ -225,7 +225,7 @@ describe("which document a file box asks for", () => {
   it("reads the question, not the button", () => {
     expect(fileBoxWants(box("Resume/CV (Attach)", "resume", "#resume"))).toBe("resume");
     expect(fileBoxWants(box("Please provide a recent transcript of your undergraduate studies (Attach)", "question_1"))).toBe("transcript");
-    expect(fileBoxWants(box("Cover Letter (Attach)", "cover_letter"))).toBe("other");
+    expect(fileBoxWants(box("Cover Letter (Attach)", "cover_letter"))).toBe("cover");
     expect(fileBoxWants(box("Autofill from resume"))).toBe("autofill");
     expect(fileBoxWants(box("Attach", "question_2"))).toBe("unnamed");
   });

@@ -47,6 +47,8 @@ export const PATHS = {
   jevUsage: path.join(ROOT, "data", "runs", "jev-usage.jsonl"),
   writerUsage: path.join(ROOT, "data", "runs", "writer-usage.jsonl"),
   imports: path.join(ROOT, "data", "imports"),
+  /** Tailored resumes and cover letters, one folder per job: data/documents/<job id>/. */
+  documents: path.join(ROOT, "data", "documents"),
   resumeDir: path.join(ROOT, "data", "resume"),
   browserScripts: path.join(ROOT, "src", "forms"),
 } as const;
@@ -240,6 +242,26 @@ export const WRITER = {
    * Check them against https://www.anthropic.com/pricing when the model changes.
    */
   apiPricesPerMillion: { input: 3, cacheWrite: 3.75, cacheRead: 0.3, output: 15 },
+} as const;
+
+/** Tailored resumes and cover letters, written per job from the profile and rendered to PDF by the runner's Chrome. */
+export const DOCUMENTS = {
+  /** Writing a resume deserves more thought than finishing a form field. */
+  effort: "high",
+  /** The most skills the tailored resume lists. */
+  maxSkills: 14,
+  /** Bullets per experience or project entry on the tailored resume, at most. */
+  maxBullets: 4,
+  /** Pages the resume may run to. A longer one loses its lowest-ranked bullets until it fits. */
+  resumePages: 1,
+  /** Pages the cover letter may run to. */
+  coverPages: 1,
+  /** Paper for the PDFs, in inches. US Letter; A4 is 8.27 by 11.69. */
+  paper: { width: 8.5, height: 11 },
+  /** How long one headless Chrome print may take. */
+  printTimeoutMs: 30_000,
+  /** Words that may be capitalized in a sentence without being a claim about the candidate. */
+  plainWords: ["I", "A", "An", "The", "My", "In", "At", "On", "For", "With", "And", "As", "To", "Of", "This", "That", "It", "We", "You", "Your", "Our", "If", "When", "While", "After", "Before", "Over", "Since", "Through", "Then", "There", "Here", "What", "Which", "Who", "How", "Why", "Yes", "No", "Dear", "Hi", "Hello", "Sincerely", "Best", "Regards", "Thank", "Thanks", "Team", "Hiring", "Manager", "Regarding", "Re"],
 } as const;
 
 export type WriterBackend = "claude-code" | "api";

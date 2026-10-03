@@ -46,6 +46,9 @@ profile. The tool makes that the only way.
 - A cookie banner is touched only when it covers the Submit button, and it
   is answered with its most private choice (necessary only, or reject).
   The tool never clicks "accept all".
+- Tailored resumes and cover letters (`data/documents/`) are written from
+  the profile only, checked in code for any number or name the profile does
+  not hold, and git-ignored.
 - The runner's Chrome profile lives in `data/runs/chrome-profile`, apart
   from your own browser, with no saved logins. Its cookies, cache and site
   data are cleared between runs after every `RUN.clearBrowsingEvery`
