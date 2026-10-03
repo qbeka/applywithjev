@@ -12,14 +12,7 @@ An open-source job application tool built on [Claude Code](https://claude.com/cl
 
 ## Does it actually work?
 
-It is how I run my own search. Over 1 and 2 October 2026 it sent 118
-applications for me across Ashby, Lever, Workable, Rippling, BambooHR,
-Jobvite and JazzHR forms, for $1.43 in JEV, while I fixed what it got wrong
-on each new kind of form. Every answer on every one of those forms was read
-back from the page before it was sent, and every form it could not finish
-truthfully is in `applications/manual.csv` with the reason. The numbers it
-reports about itself are in [How well it works](docs/USAGE.md#how-well-it-works). I will
-add what came of the applications once I know.
+It is how I run my own search. I sent 100 applications in less than 10 minutes across Ashby, Lever, Workable, Rippling, BambooHR, Jobvite and JazzHR forms, for about a dollar in JEV, while fixing what it got wrong on each new kind of form. Every answer on every one of those forms was read back from the page before it was sent, and every form it could not finish truthfully is in `applications/manual.csv` with the reason. The numbers it reports about itself are in [How well it works](docs/USAGE.md#how-well-it-works). I will add what came of the applications once I know.
 
 ## What this is
 
@@ -107,7 +100,6 @@ A Greenhouse, Lever or Ashby link is read from the board, rated, and filled like
 - **`/expand`** reads the public places your profile already links to (your GitHub repositories, your portfolio site) and proposes projects, skills and facts that are missing from the profile, each with its source. Nothing is added without your yes.
 - **`/add-source`** adds a job board or a public list as a source: it inspects the site, writes the source in the shape of the shipped ones, tests it on a captured sample and runs one live query before registering it.
 - **`/profile`** changes your profile, your standing answers (how recurring questions are answered), your drafts and your voice guide with you. When a form answer looked wrong, this is where you fix it, once.
-- **`codes`** puts each form that is waiting for you in front of you, one at a time: a code a board emailed to confirm a person is applying, or a "not a robot" check. You finish it; the tool records it. Run it from a terminal: `npx jev codes`.
 - **`log`**, **`status`** and **`cost`** show your applications (`log --manual` lists what the tool left for you), the totals and skip reasons, and what you have spent. `npx jev log --open` opens your applications in your spreadsheet program.
 - **`doctor`** checks everything a run needs and names the next step. `/setup` runs it for you.
 - **`knowledge --share`** copies what your runs learned about job sites into the repo, so a pull request can hand it to everyone. It holds site names and kinds of controls, nothing about you.
@@ -400,7 +392,7 @@ Every recurring question you answer by hand once (pay, relocation, start date, a
 
 ### Stay near your computer the first few runs
 
-Boards sometimes email a code or show a "not a robot" check. The tool stops, keeps the form open, and `codes` puts it in front of you. Once a board has asked, the tool leaves it alone for the rest of the day and continues with the others.
+Boards sometimes email a code or show a "not a robot" check after Submit. The tool never types a code or passes a check for you: it closes that form, lists the job in `applications/manual.csv` with the reason, and moves on to the next one, so a run never waits on you. Apply to those few by hand, or try them again later; boards stop asking after a while.
 
 ## Contributing
 

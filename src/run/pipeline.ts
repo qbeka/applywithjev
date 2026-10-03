@@ -18,7 +18,7 @@ import { JevClient } from "../jev/client.js";
 import { applyUrlFor, hostIs, type Job } from "../jobs/normalize.js";
 import { loadQueue, saveQueue, sortEntries, updateEntry, type QueueEntry } from "../jobs/queue.js";
 import { rememberWalledHost } from "../jobs/walled.js";
-import { askingForCodeToday, learn, loadKnowledge } from "../knowledge/sites.js";
+import { learn, loadKnowledge } from "../knowledge/sites.js";
 import { loadRows, saveRows, takeHomeCell, upsertEntry } from "../log/csv.js";
 import { loadProfile, type Profile } from "../profile/schema.js";
 import { limiter, paced, spacer } from "../util/pace.js";
@@ -47,8 +47,7 @@ export function takeJobs(ids: string[], o: { count: number; dry: boolean }): Que
     });
   }
   if (o.dry) return sortEntries(q.entries.filter((e) => e.status === "queued")).slice(0, o.count);
-  // The best queued jobs, passing over sites that are asking for an emailed code today: those wait in the queue.
-  const entries = sortEntries(q.entries.filter((e) => e.status === "queued" && !waitsForAnotherDay(e))).slice(0, o.count);
+  const entries = sortEntries(q.entries.filter((e) => e.status === "queued")).slice(0, o.count);
   for (const e of entries) updateEntry(q, e.job.id, { status: "in_progress", attempts: e.attempts + 1 });
   saveQueue(q);
   return entries;
@@ -146,20 +145,11 @@ export async function resolvePage(jev: JevClient, profile: Profile, entry: Queue
 }
 
 export const CODE_PREFIX = "the board emailed you a code";
-const CODE_REASON = `${CODE_PREFIX} to confirm a person is applying. The filled form is open in the tool's window: type the code, click Submit, then run: codes`;
+const CODE_REASON = `${CODE_PREFIX} to confirm a person is applying. Apply by hand, or run apply <id> --submit again later: boards stop asking after a while`;
 export const HUMAN_PREFIX = "the site asks you to confirm you are not a robot";
-const HUMAN_REASON = `${HUMAN_PREFIX}. The filled form is open in the tool's window: pass the check, click Submit, then run: codes`;
-/** True for a job whose filled form is open and waiting for the person: a code to type, or a robot check to pass. */
+const HUMAN_REASON = `${HUMAN_PREFIX} after Submit. Apply by hand`;
+/** True for a job that stopped at a human check: a code a board emailed, or a robot check. */
 export const waitsForYou = (reason: string | null | undefined) => !!reason && (reason.startsWith(CODE_PREFIX) || reason.startsWith(HUMAN_PREFIX));
-
-/**
- * Sites that asked for an emailed code in this run. A site that has started asking will ask every
- * time, so the rest of its jobs are left in the queue for another day instead of being filled,
- * clicked and left waiting, each with an email to the person.
- */
-const askingForCodes = new Set<string>(askingForCodeToday());
-const siteOfUrl = (url: string) => hostOf(url).split(".").slice(-2).join(".");
-const waitsForAnotherDay = (e: QueueEntry) => askingForCodes.has(siteOfUrl(applyUrlFor(asJob(e))));
 
 /**
  * Submissions to one site are spaced out, and only one form is being sent at any moment. A burst
@@ -180,13 +170,6 @@ export function submitAndRecord(jev: JevClient, id: string, force: boolean, keep
   return perSite(siteOf(id), () =>
     oneAtATime(async () => {
       try {
-        if (!force && askingForCodes.has(siteOf(id))) {
-          // Filled before the site began asking. Sending it now would only add one more form waiting on a code.
-          record(id, "queued", null);
-          console.log(`${id}  not sent: this site is asking for an emailed code today. The job stays in the queue.`);
-          await closeJobTab(id);
-          return false;
-        }
         const r = await submitJob(jev, id, force);
         console.log(`${id}  ${r.needsCode ? "needs your code" : r.humanCheck ? "needs you to pass a robot check" : r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
         if (r.state === "submitted") {
@@ -195,10 +178,10 @@ export function submitAndRecord(jev: JevClient, id: string, force: boolean, keep
           return true;
         }
         if (r.needsCode) {
-          // Only the person can pass a human check. The tab stays open, filled, for them.
+          // Only the person can pass a human check. The tab is closed and the job is listed for them; the run moves on.
           record(id, "needs_review", CODE_REASON);
           learn(r.url, { emailsCode: true });
-          askingForCodes.add(siteOf(id));
+          if (!keepOpen) await closeJobTab(id);
           return false;
         }
         if (r.refused) {
@@ -209,9 +192,9 @@ export function submitAndRecord(jev: JevClient, id: string, force: boolean, keep
           return false;
         }
         if (r.humanCheck) {
-          // A robot check is the person's to pass. The tab stays open, filled, and the site's other jobs wait for another day.
+          // A robot check is the person's to pass. The tab is closed and the job is listed for them; the run moves on.
           record(id, "needs_review", HUMAN_REASON);
-          askingForCodes.add(siteOf(id));
+          if (!keepOpen) await closeJobTab(id);
           return false;
         }
         if (r.errors.length) console.log(`  errors: ${r.errors.join(" | ")}`);
@@ -298,14 +281,6 @@ export async function pipeline(entries: QueueEntry[], o: RunOptions): Promise<{ 
     if (await settle(jev, r, o)) sent.push(r.jobId);
   };
   await paced(entries, (e) => hostOf(applyUrlFor(asJob(e))), async (e) => {
-    if (o.submit && waitsForAnotherDay(e)) {
-      // Not attempted: back in the queue, untouched.
-      record(e.job.id, "queued", null);
-      const held = blockedReport(e.job, "left in the queue: this site is asking for an emailed code today");
-      reports[entries.indexOf(e)] = held;
-      if (!o.quiet) console.log(`\n== ${e.job.company} | ${e.job.title} [${e.job.id}] ${held.reason}`);
-      return held;
-    }
     const first = await fillOnce(jev, profile, e);
     reports[entries.indexOf(e)] = first;
     const rest = (async () => {

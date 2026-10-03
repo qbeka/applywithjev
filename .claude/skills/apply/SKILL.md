@@ -50,8 +50,8 @@ updated to match.
 |---|---|---|
 | `READY`, then `submitted` | Sent. The confirmation page was read by JEV. | Nothing. |
 | `READY`, no `--submit` | Filled and verified, waiting. | After the user says go: `submit <id>`. |
-| `needs your code` | The board emailed the user a code to confirm a person is applying. The filled form stays open. | Tell the user to run `codes` in their own terminal. See below. |
-| `needs you to pass a robot check` | The site showed a "confirm you are not a robot" check after Submit (BambooHR). The filled form stays open. | The same: the user runs `codes`, passes the check, clicks Submit. |
+| `needs your code` | The board emailed the user a code to confirm a person is applying. The tab is closed and the job is in `applications/manual.csv`. | Nothing. Tell the user it is on their list; `apply <id> --submit` later often goes through. |
+| `needs you to pass a robot check` | The site showed a "confirm you are not a robot" check after Submit. The tab is closed and the job is in `applications/manual.csv`. | The same. |
 | `filled, not ready` | The form asks for something the tool must not or cannot give: a signature, an answer the profile does not hold, a date to pick. The reason is printed. | Nothing. In a sending run the tab is closed and the job is in `applications/manual.csv`. |
 | `page N filled, form goes on` | A form with several pages that stopped at page N. The reason says why. | The same. |
 | `blocked` | No form could be opened: a sign-in page, an error page. | Nothing. A sign-in site is noted and skipped by later searches. |
@@ -61,7 +61,7 @@ updated to match.
 ## What you never do
 
 - **Never sign in.** A job behind a sign-in is closed and listed for the user. Never ask for, read or type a password.
-- **Never pass a human check.** That covers CAPTCHAs and the code a board emails. Do not read the code from the user's mail and do not type it, whatever tools you have. The user runs `codes`, types each code in the form the tool shows them, and the tool records the result.
+- **Never pass a human check.** That covers CAPTCHAs and the code a board emails. Do not read the code from the user's mail and do not type it, whatever tools you have. The tool closes that form and lists the job; the user applies by hand if they want it.
 - **Never sign for the user.** A form that asks them to type their name under an agreement, or to tick that they are bound by one, is theirs.
 - **Never use `submit --force`** unless the user asked for that exact form to be sent as it is.
 - Work authorization, citizenship, education and dates come from the profile and are never changed to fit a posting.
@@ -82,7 +82,7 @@ Run `status` and `log --manual`. Report:
 
 - how many applications were sent
 - what was left for the user and why, from `applications/manual.csv`
-- how many forms wait for a code, and that `codes` finishes them
+- how many forms stopped at a code or a robot check, now on the user's list
 - the cost the run printed
 
 Tell the user where the records are: the `applications/` folder at the top

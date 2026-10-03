@@ -150,7 +150,7 @@ again. Changing your profile, drafts or voice guide makes it start over.
   each with the reason and the link. `npx jev log --manual`
   prints the list.
 - When a board emails you a code after you send, the filled form stays
-  open. `npx jev codes` brings each one to the front in turn.
+  closed and listed in `applications/manual.csv` for you to do by hand.
   Type the code from your email, click Submit, and the tool records the
   application. The tool does not read or type the code.
 

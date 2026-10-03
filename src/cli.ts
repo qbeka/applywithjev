@@ -12,8 +12,8 @@ import { contextFingerprint } from "./answers/resolve.js";
 import { loadMemory, prune, saveMemory } from "./answers/memory.js";
 import { inspect, setValues } from "./browser/formRunner.js";
 import { loadReport, type Fill, type FillReport } from "./browser/report.js";
-import { closeJobTab, hasOpenTab } from "./browser/session.js";
-import { checkJob, watchForConfirmation } from "./browser/submit.js";
+import { closeJobTab } from "./browser/session.js";
+import { checkJob } from "./browser/submit.js";
 import { loadEnv, DISCOVER, PATHS, REPORT, RUN } from "./config.js";
 import { discover } from "./discover.js";
 import { formatChecks, isReadyToRun, nextStep, runChecks } from "./doctor.js";
@@ -29,7 +29,7 @@ import { addJob, looksLikeUrl } from "./jobs/addJob.js";
 import { buildReport } from "./report/data.js";
 import { reportPage } from "./report/page.js";
 import { startReportServer } from "./report/server.js";
-import { endIfAbandoned, HUMAN_PREFIX, noteApplied, pipeline, recordApplied, resolvePage, submitAndRecord, takeJobs, waitsForYou } from "./run/pipeline.js";
+import { endIfAbandoned, noteApplied, pipeline, recordApplied, resolvePage, submitAndRecord, takeJobs, waitsForYou } from "./run/pipeline.js";
 import { brief, printFill, printTable } from "./run/print.js";
 import { limiter } from "./util/pace.js";
 
@@ -125,7 +125,7 @@ program
       const count = (...statuses: string[]) => reports.filter((r) => statuses.includes(done.get(r.jobId)?.status ?? "")).length;
       const codes = reports.filter((r) => waitsForYou(done.get(r.jobId)?.statusReason)).length;
       console.log(`\n${count("applied")} applied, ${count("needs_review", "blocked")} left for you, ${count("skipped", "failed")} skipped, ${count("in_progress")} filled and waiting for submit`);
-      if (codes) console.log(`${codes} filled form(s) are waiting for you: a code that was emailed to you, or a robot check. Run: codes`);
+      if (codes) console.log(`${codes} form(s) stopped at a human check (an emailed code or a robot check). They are in applications/manual.csv; apply to those by hand, or try them again later.`);
       console.log(whereTheRecordIs());
     }
     if (!o.json) console.log(`\nCost of this run\n${formatCost(loadCost(began))}`);
@@ -242,36 +242,6 @@ program
   });
 
 // ------------------------------------------------------ forms left for you
-
-program
-  .command("codes")
-  .description("Finish the forms that are waiting for you: an emailed code to type, or a robot check to pass. The tool shows each form in turn; you finish it and click Submit; it records the result")
-  .action(async () => {
-    const waiting = loadQueue().entries.filter((e) => e.status === "needs_review" && waitsForYou(e.statusReason));
-    if (!waiting.length) return console.log("No form is waiting for a code or a robot check.");
-    const jev = new JevClient();
-    let skip = false;
-    if (process.stdin.isTTY) process.stdin.on("data", () => (skip = true));
-    const sent: string[] = [];
-    for (const [i, e] of waiting.entries()) {
-      console.log(`\n${i + 1} of ${waiting.length}: ${e.job.company} | ${e.job.title}`);
-      if (!(await hasOpenTab(e.job.id))) {
-        console.log(`  Its tab is closed. Fill it again with: apply ${e.job.id} --submit`);
-        continue;
-      }
-      console.log(`  The form is in front in the tool's Chrome window. ${(e.statusReason ?? "").startsWith(HUMAN_PREFIX) ? "Pass the robot check" : "Type the code from your email"} and click Submit.${process.stdin.isTTY ? " Press Enter here to skip this one." : ""}`);
-      skip = false;
-      if ((await watchForConfirmation(jev, e.job.id, { timeoutMs: RUN.codeWaitMs, stop: () => skip })) === "submitted") {
-        recordApplied(e.job.id);
-        await closeJobTab(e.job.id);
-        sent.push(e.job.id);
-        console.log("  Sent and recorded.");
-      } else console.log("  Not sent yet. It stays open; run codes again when you are ready.");
-    }
-    if (process.stdin.isTTY) process.stdin.pause();
-    await noteApplied(sent);
-    console.log(`\n${sent.length} of ${waiting.length} sent.\n${whereTheRecordIs()}`);
-  });
 
 program
   .command("check <ids...>")

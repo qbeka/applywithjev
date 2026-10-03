@@ -43,8 +43,9 @@ doctor` says what is in place and what to do next.
   tool creates no accounts, stores no site passwords and solves no CAPTCHAs.
 - **A human check is the person's to pass.** That includes a code a board
   emails to confirm a person is applying. No code is ever read from mail or
-  typed into a form, by the tool or by you. `codes` puts the form in front
-  of the person.
+  typed into a form, by the tool or by you. The form is closed, the job is
+  listed in `applications/manual.csv` with the reason, and the run moves
+  on. Nothing waits on the person.
 - **What the tool cannot finish truthfully, it sets aside.** A form that
   asks for a signature, or for something the profile does not say, is
   closed and listed in `applications/manual.csv` with the reason (`src/run/outcome.ts`).

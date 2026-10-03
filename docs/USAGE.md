@@ -53,42 +53,17 @@ are not a robot" test or email you a code. Only you can do those.
 
 ### Codes and checks that are yours
 
-After several applications in a short time, Greenhouse asks for proof that
-a person is applying. It emails you an 8-character code and waits. BambooHR
-shows a "confirm you are not a robot" check after Submit. The tool does not
-read a code, does not type it, and does not pass a robot check. Those steps
-are yours.
-
-The tool makes them quick. Run:
+After several applications in a short time, Greenhouse sometimes emails
+an 8-character code and waits for it. BambooHR and JazzHR show a "confirm
+you are not a robot" check. The tool does not read a code, does not type
+it, and does not pass a robot check. It closes that form, lists the job in
+`applications/manual.csv` with the reason, and moves on, so a run is never
+stuck on you. Apply to those few by hand, or run `npx jev apply <id>
+--submit` again later: boards stop asking after a while.
 
 ```bash
-npx jev codes
+npx jev log --manual
 ```
-
-It brings each waiting form to the front, one at a time. You type the code
-from your email, or pass the check, and click Submit. The tool sees the
-confirmation, records the application and moves to the next form. Each one
-takes a few seconds.
-
-Once a site has asked for a code or a check, the tool sends it nothing more
-that day. The site's other jobs stay in the queue, and a later run picks
-them up.
-
-Three parts share the work.
-
-| Part | Its job |
-|---|---|
-| [JEV](https://openrouter.ai/typesafe/jev-1.13) | Makes every choice that has a fixed set of answers. It returns probabilities, not text. One call takes about half a second. |
-| This program | Finds jobs, applies the rules, drives Chrome, walks each form page by page, checks every answer on the page, and keeps its notes. |
-| [Claude](https://claude.com), through Claude Code or the Claude API | Writes the answers that need sentences. It also decides the few fields JEV was unsure about. It gets your facts and the open questions, and it has no other tools. |
-
-The rule is simple. If a question has a fixed set of answers, JEV answers
-it. If it needs a sentence, Claude writes it. If it is a rule, the code
-enforces it.
-
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes each step.
-[docs/JEV.md](docs/JEV.md) explains how the tool asks JEV its questions.
-[docs/SOURCES.md](docs/SOURCES.md) lists where the jobs come from.
 
 ## What the tool handles
 
@@ -134,11 +109,11 @@ date. It ranks the job lower and leaves the choice to you.
 
 | Job board | What to expect |
 |---|---|
-| Greenhouse | Works well, until Greenhouse asks for proof that a person is applying. After several applications in a short time it emails you a code on every form. The tool leaves the first such form open for you and keeps the rest of that day's Greenhouse jobs in the queue. See [Codes and checks that are yours](#codes-and-checks-that-are-yours). |
+| Greenhouse | Works well. After several applications in a short time it sometimes emails a code to confirm a person is applying; that form is closed and listed for you, and the run goes on. |
 | Ashby | Works well. Ashby saves each field as you type, so the tool fills these forms one field at a time, and one form at a time. |
 | Lever | Works well. |
 | Rippling, Workable | Works. Tested on a few forms each. |
-| BambooHR | Works, up to its "confirm you are not a robot" check after Submit. The tool fills the form, clicks Submit, and leaves the form open for you to pass the check. See [Codes and checks that are yours](#codes-and-checks-that-are-yours). |
+| BambooHR | Works. Its "confirm you are not a robot" check after Submit is yours: that form is closed and listed for you, and the run goes on. |
 | Jobvite, Tesla, and other forms that run over several pages | Works. The tool fills a page, checks it, clicks the form's own Next, and fills the next page, up to 8 pages. |
 | SmartRecruiters | Not supported yet. The tool cannot read its form. It skips these jobs. |
 | Workday, iCIMS, Taleo, Oracle, SuccessFactors, Amazon, LinkedIn, and any site that wants a sign-in | The tool does not sign in anywhere. It skips these jobs. If it meets a sign-in page during a run, it closes the page, puts the job on your by-hand list, and skips that site from then on. |

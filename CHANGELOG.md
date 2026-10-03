@@ -11,7 +11,11 @@ changed for a person using the tool and what changed for a contributor.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+- A form that stops at a human check (an emailed code, a robot check) is
+  closed and listed in `applications/manual.csv` with the reason, and the
+  run moves on. The site is no longer rested for the day and no tab is left
+  waiting: a run never waits on the person. The `codes` command is gone.
 
 ## [1.2.0] - 2026-10-02
 

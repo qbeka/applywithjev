@@ -217,7 +217,7 @@ page, a form that asks for a signature, a required question the profile
 cannot answer, a form with more pages than `RUN.maxPages`, a form that would
 not move to its next page. In a sending run the tab is closed and the job
 goes into `applications/manual.csv`. A form waiting on an emailed code is the one
-exception: its tab stays open, and `codes` shows it to the person.
+exception: its tab is closed and the job is listed for the person with the reason.
 
 ## What the tool learns
 
