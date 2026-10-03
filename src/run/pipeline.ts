@@ -5,11 +5,13 @@
  * Fills run side by side and paced per site, the writer takes a few forms at
  * a time, and submissions go one at a time with a pause per site.
  */
-import { RUN } from "../config.js";
-import { ensureBrowser } from "../browser/cdp.js";
+import { PATHS, RUN } from "../config.js";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { clearBrowsingData, ensureBrowser } from "../browser/cdp.js";
 import { fillJob, nextPage, resolveJob, shouldAdvance } from "../browser/formRunner.js";
 import { blockedReport, loadReport, type FillReport } from "../browser/report.js";
-import { closeJobTab } from "../browser/session.js";
+import { closeJobTab, loadSession } from "../browser/session.js";
 import { submitJob } from "../browser/submit.js";
 import { logNotes } from "../answers/resolve.js";
 import { JevClient } from "../jev/client.js";
@@ -17,7 +19,7 @@ import { applyUrlFor, hostIs, type Job } from "../jobs/normalize.js";
 import { loadQueue, saveQueue, sortEntries, updateEntry, type QueueEntry } from "../jobs/queue.js";
 import { rememberWalledHost } from "../jobs/walled.js";
 import { askingForCodeToday, learn, loadKnowledge } from "../knowledge/sites.js";
-import { loadRows, saveRows, upsertEntry } from "../log/csv.js";
+import { loadRows, saveRows, takeHomeCell, upsertEntry } from "../log/csv.js";
 import { loadProfile, type Profile } from "../profile/schema.js";
 import { limiter, paced, spacer } from "../util/pace.js";
 import { outcomeOf } from "./outcome.js";
@@ -53,12 +55,54 @@ export function takeJobs(ids: string[], o: { count: number; dry: boolean }): Que
 }
 
 /** Records an outcome in the queue and in the record files. */
-export function record(id: string, status: QueueEntry["status"], reason: string | null, extra: Partial<Record<"What They Do" | "Why You're a Fit" | "Notes", string>> = {}): QueueEntry {
+export function record(id: string, status: QueueEntry["status"], reason: string | null, extra: Partial<Record<"What They Do" | "Why You're a Fit" | "Notes" | "Take-home", string>> = {}): QueueEntry {
   const q = loadQueue();
   const e = updateEntry(q, id, { status, statusReason: reason, ...(status === "applied" ? { appliedAt: new Date().toISOString() } : {}) });
   saveQueue(q);
   saveRows(upsertEntry(loadRows(), e, extra));
   return e;
+}
+
+/** Records an application as sent. A take-home the form asked for goes into the record too, so takehome.csv lists it for the person. */
+export function recordApplied(id: string): QueueEntry {
+  let takeHome: { text: string; url: string } | undefined;
+  try {
+    takeHome = loadReport(id).takeHome?.[0];
+  } catch {
+    takeHome = undefined;
+  }
+  if (takeHome) console.log(`  take-home to do: ${takeHome.url}`);
+  const e = record(id, "applied", null, takeHome ? { "Take-home": takeHomeCell(takeHome.url, takeHome.text) } : {});
+  noteSent();
+  return e;
+}
+
+/** How many applications have gone out since the browsing data was last cleared. Kept in a file, so it counts across runs. */
+const sentSinceClear = (): number => {
+  try {
+    return existsSync(PATHS.browsing) ? Number((JSON.parse(readFileSync(PATHS.browsing, "utf8")) as { sent?: number }).sent ?? 0) : 0;
+  } catch {
+    return 0;
+  }
+};
+const noteSent = () => {
+  mkdirSync(path.dirname(PATHS.browsing), { recursive: true });
+  writeFileSync(PATHS.browsing, JSON.stringify({ sent: sentSinceClear() + 1 }));
+};
+
+/**
+ * Clears the runner's cookies, cache and site data once enough applications have gone out, and only
+ * while no form is open: a form mid-fill would lose its session. Call it before and after a run.
+ */
+export async function clearBrowsingWhenDue(): Promise<void> {
+  if (sentSinceClear() < RUN.clearBrowsingEvery || Object.keys(loadSession()).length) return;
+  try {
+    await clearBrowsingData();
+    writeFileSync(PATHS.browsing, JSON.stringify({ sent: 0 }));
+    console.log("Cleared the runner's cookies, cache and site data.");
+  } catch (err) {
+    console.log(`Could not clear browsing data: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /** Set when a fill was abandoned. Its page connection may still be open, so a command ends the process itself when it is done. */
@@ -146,7 +190,7 @@ export function submitAndRecord(jev: JevClient, id: string, force: boolean, keep
         const r = await submitJob(jev, id, force);
         console.log(`${id}  ${r.needsCode ? "needs your code" : r.humanCheck ? "needs you to pass a robot check" : r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
         if (r.state === "submitted") {
-          record(id, "applied", null);
+          recordApplied(id);
           if (!keepOpen) await closeJobTab(id);
           return true;
         }
@@ -241,6 +285,7 @@ export async function pipeline(entries: QueueEntry[], o: RunOptions): Promise<{ 
   const profile = loadProfile();
   const jev = new JevClient();
   await ensureBrowser();
+  await clearBrowsingWhenDue();
   const writer = limiter(RUN.writerConcurrency);
   const reports = new Array<FillReport>(entries.length);
   const sent: string[] = [];
@@ -286,5 +331,6 @@ export async function pipeline(entries: QueueEntry[], o: RunOptions): Promise<{ 
       console.log(`${e.job.id}  ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  await clearBrowsingWhenDue();
   return { reports, sent };
 }

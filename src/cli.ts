@@ -23,7 +23,7 @@ import { loadQueue, saveQueue, sortEntries, updateEntry, QueueStatus } from "./j
 import { formatCost, loadCost } from "./log/cost.js";
 import { appliedRecords, loadRows, manualRecords, saveRows, toRecord, upsertEntry } from "./log/csv.js";
 import { loadProfile } from "./profile/schema.js";
-import { endIfAbandoned, HUMAN_PREFIX, noteApplied, pipeline, record, resolvePage, submitAndRecord, takeJobs, waitsForYou } from "./run/pipeline.js";
+import { endIfAbandoned, HUMAN_PREFIX, noteApplied, pipeline, recordApplied, resolvePage, submitAndRecord, takeJobs, waitsForYou } from "./run/pipeline.js";
 import { brief, printFill, printTable } from "./run/print.js";
 import { limiter } from "./util/pace.js";
 
@@ -36,7 +36,7 @@ const program = new Command();
 program.name("applywithjev").description("Find and rate software jobs with JEV, fill and check each application form in Chrome, and let Claude Code write what needs writing.").version("0.1.0");
 
 const int = (v: string) => parseInt(v, 10);
-const whereTheRecordIs = () => `Applications you sent: ${PATHS.applied}\nJobs left for you to do by hand: ${PATHS.manual}\nEvery job considered: ${PATHS.applications}`;
+const whereTheRecordIs = () => `Applications you sent: ${PATHS.applied}\nJobs left for you to do by hand: ${PATHS.manual}\nTake-home assignments to do: ${PATHS.takehome}\nEvery job considered: ${PATHS.applications}`;
 
 // ---------------------------------------------------------------- find jobs
 
@@ -156,7 +156,7 @@ program
       console.log(`  The form is in front in the tool's Chrome window. ${(e.statusReason ?? "").startsWith(HUMAN_PREFIX) ? "Pass the robot check" : "Type the code from your email"} and click Submit.${process.stdin.isTTY ? " Press Enter here to skip this one." : ""}`);
       skip = false;
       if ((await watchForConfirmation(jev, e.job.id, { timeoutMs: RUN.codeWaitMs, stop: () => skip })) === "submitted") {
-        record(e.job.id, "applied", null);
+        recordApplied(e.job.id);
         await closeJobTab(e.job.id);
         sent.push(e.job.id);
         console.log("  Sent and recorded.");
@@ -178,7 +178,7 @@ program
         const r = await checkJob(jev, id);
         console.log(`${id}  ${r.needsCode ? "still needs your code" : r.state} (${r.confidence.toFixed(2)})  ${r.url}`);
         if (r.state === "submitted") {
-          record(id, "applied", null);
+          recordApplied(id);
           await closeJobTab(id);
           sent.push(id);
         } else console.log(`  page ends: ${r.excerpt}`);

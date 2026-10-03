@@ -59,6 +59,23 @@ export async function closeTab(id: string): Promise<void> {
   await fetch(`${base()}/json/close/${id}`).catch(() => undefined);
 }
 
+/**
+ * Clears the runner's cookies, cache and site data, so one long session of applications does not
+ * read as a robot. Done on a blank tab of its own, between runs, when no form is open.
+ */
+export async function clearBrowsingData(): Promise<void> {
+  const t = await newTab("about:blank");
+  const page = await Page.attach(t);
+  try {
+    await page.send("Network.clearBrowserCache");
+    await page.send("Network.clearBrowserCookies");
+    await page.send("Storage.clearDataForOrigin", { origin: "*", storageTypes: "all" });
+  } finally {
+    page.close();
+    await closeTab(t.id);
+  }
+}
+
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
 type Sent = { url: string; status: number | null; failed: boolean };

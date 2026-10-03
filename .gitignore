@@ -12,6 +12,7 @@ applied.csv
 data/memory.json
 data/knowledge.json
 manual.csv
+takehome.csv
 data/queue.json
 data/cache/
 data/runs/

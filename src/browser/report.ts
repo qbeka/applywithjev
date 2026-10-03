@@ -12,8 +12,11 @@ import type { ControlState } from "./session.js";
 
 export type Fill = { selector: string; kind: string; value: string };
 export type FieldReport = { label: string; required: boolean; action: string; shown: string; note: string | null };
+export type TakeHome = { text: string; url: string };
 export type FillReport = {
   jobId: string;
+  /** A take-home assignment the form mentions, with its link. */
+  takeHome?: TakeHome[];
   company: string;
   title: string;
   ats: string;
@@ -112,9 +115,12 @@ export function blockedReport(job: { id: string; company: string; title: string;
  * it is answered once any box in it is ticked, so the unticked ones are not missing.
  */
 export function emptyRequiredFields(d: FieldsDump, plan: FillPlan, shown: string[], states: ControlState[]): FillPlan["fields"] {
-  const nameOf = new Map(d.fields.map((f) => [f.selector, f.kind === "checkbox" ? f.name : ""]));
-  const answeredGroups = new Set(plan.fields.filter((f, i) => f.kind === "checkbox" && shown[i]).map((f) => nameOf.get(f.selector)).filter((n): n is string => !!n));
-  return plan.fields.filter((f, i) => f.required && !shown[i] && states[i] !== "off" && f.action !== "upload" && !(f.kind === "checkbox" && answeredGroups.has(nameOf.get(f.selector) ?? "")));
+  // A required group of checkboxes is satisfied by any one tick. The group is the boxes that share a name,
+  // or, when each box has a name of its own (Ashby), the boxes under one question.
+  const boxes = d.fields.filter((f) => f.kind === "checkbox");
+  const groupOf = new Map(boxes.map((f) => [f.selector, f.name && boxes.filter((o) => o.name === f.name).length > 1 ? `name:${f.name}` : f.section ? `question:${f.section}` : ""]));
+  const answeredGroups = new Set(plan.fields.filter((f, i) => f.kind === "checkbox" && shown[i]).map((f) => groupOf.get(f.selector)).filter((n): n is string => !!n));
+  return plan.fields.filter((f, i) => f.required && !shown[i] && states[i] !== "off" && f.action !== "upload" && !(f.kind === "checkbox" && answeredGroups.has(groupOf.get(f.selector) ?? "")));
 }
 
 export const emptyRequired = (d: FieldsDump, plan: FillPlan, shown: string[], states: ControlState[]) => emptyRequiredFields(d, plan, shown, states).map((f) => f.label);

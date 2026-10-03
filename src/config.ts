@@ -38,6 +38,10 @@ export const PATHS = {
   plans: path.join(ROOT, "data", "cache", "plans.json"),
   /** Jobs the tool could not finish and left for the person, with the reason and the link. */
   manual: path.join(ROOT, "manual.csv"),
+  /** Applications sent to a company that also wants a take-home assignment: the link and the instructions, for the person to do. */
+  takehome: path.join(ROOT, "takehome.csv"),
+  /** How many applications have gone out since the runner's browsing data was last cleared. */
+  browsing: path.join(ROOT, "data", "runs", "browsing.json"),
   runs: path.join(ROOT, "data", "runs"),
   jevUsage: path.join(ROOT, "data", "runs", "jev-usage.jsonl"),
   writerUsage: path.join(ROOT, "data", "runs", "writer-usage.jsonl"),
@@ -266,6 +270,8 @@ export const RUN = {
   submitGapMs: 45_000,
   /** The most pages of one form the tool will walk. A form that goes on longer is left for the person. */
   maxPages: 8,
+  /** After this many applications the runner's cookies, cache and site data are cleared, between runs, so one long session does not read as a robot. */
+  clearBrowsingEvery: 15,
   /** How many times a form is opened and filled when values did not land. The second go comes when the other forms are done, with the window to itself. */
   fillAttempts: 2,
   /** Longest one form may take to open and fill. A page that never settles is recorded as blocked instead of holding up the run. */

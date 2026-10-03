@@ -435,11 +435,20 @@
   // Told by the frame's own host. A share widget that merely names a job board in its address is not a form.
   const hostOf = (src) => { try { return new URL(src).hostname; } catch { return ""; } };
   out.frames = [...document.querySelectorAll("iframe[src]")].map((f) => f.src).filter((src) => /greenhouse|lever\.co|ashbyhq|workday|smartrecruiters|jobvite|bamboohr|rippling|icims/i.test(hostOf(src)));
+  // A take-home assignment the page asks for, with its link. The application still goes; the assignment is listed for the person.
+  const TAKE_HOME = /take[- ]?home|coding (challenge|assessment|exercise)|technical assessment|complete the assignment/i;
+  const URL_IN_TEXT = /https?:\/\/[^\s"')<>]+/;
+  out.takeHome = [...document.querySelectorAll("p, li, div, label, legend, span")]
+    .filter((n) => n.children.length < 8 && TAKE_HOME.test(text(n)) && text(n).length < 600 && (n.querySelector("a[href^='http']") || URL_IN_TEXT.test(text(n))))
+    .filter((n, i, all) => !all.some((o) => o !== n && n.contains(o)))
+    .slice(0, 3)
+    .map((n) => ({ text: text(n).slice(0, 300), url: (n.querySelector("a[href^='http']") || {}).href || (URL_IN_TEXT.exec(text(n)) || [""])[0] }));
   const form = fields.length && document.querySelector(fields[0].selector)?.closest("form");
   const headings = [...(form || document).querySelectorAll("h1, h2, h3, p")].slice(0, 8).map(text).filter(Boolean);
   out.context = headings.join(" | ").slice(0, 800);
   const SUBMIT_WORD = /submit|apply|send|continue|next|review|finish|soumettre|postuler|envoyer/i;
-  const submitLike = (root) => [...root.querySelectorAll("button, input[type=submit], [role=button]")].filter((b) => SUBMIT_WORD.test((text(b) || b.value || b.getAttribute("aria-label") || "").trim()) && visible(b));
+  // JazzHR draws its Submit as a styled link.
+  const submitLike = (root) => [...root.querySelectorAll("button, input[type=submit], [role=button], a[class*=submit i], a[class*=btn i]")].filter((b) => SUBMIT_WORD.test((text(b) || b.value || b.getAttribute("aria-label") || "").trim()) && visible(b));
   // The button may sit outside the form element (BambooHR draws it in a footer of its own), so the page is searched when the form has none.
   const buttons = form && submitLike(form).length ? submitLike(form) : submitLike(document);
   buttons.forEach((b) => {

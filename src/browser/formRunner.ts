@@ -136,7 +136,7 @@ async function fillPage(page: Page, jev: JevClient, profile: Profile, job: Job, 
   savePlan(job.id, d, plan);
   const read = await readBack(page, d, plan, failedRaw, uploaded);
   guide.learn([...read.failed, ...read.leftBlank]);
-  const partial = { jobId: job.id, company: job.company, title: job.title, ats: job.ats, ...read, page: at.page, earlier: at.earlier, hasNext: !!pickNext(plan.submitSelectors), seconds: (Date.now() - at.started) / 1000, jevCostUsd: (at.jevCostUsd ?? 0) + plan.jevCostUsd };
+  const partial = { jobId: job.id, company: job.company, title: job.title, ats: job.ats, ...read, takeHome: d.takeHome, page: at.page, earlier: at.earlier, hasNext: !!pickNext(plan.submitSelectors), seconds: (Date.now() - at.started) / 1000, jevCostUsd: (at.jevCostUsd ?? 0) + plan.jevCostUsd };
   return saveReport({ ...partial, ready: isReady(partial) });
 }
 

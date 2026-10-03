@@ -27,7 +27,7 @@ export const SHEET_COLUMNS = [
 ] as const;
 
 export const EXTRA_COLUMNS = [
-  "Applied On", "Fit Score", "JEV Confidence", "ATS", "Source", "Term", "Level", "Posted On", "Skip Reason", "Job ID",
+  "Applied On", "Fit Score", "JEV Confidence", "ATS", "Source", "Term", "Level", "Posted On", "Skip Reason", "Job ID", "Take-home",
 ] as const;
 
 export const COLUMNS = [...SHEET_COLUMNS, ...EXTRA_COLUMNS] as const;
@@ -97,6 +97,23 @@ export function saveRows(rows: Row[], file = PATHS.applications, appliedFile: st
   writeFileSync(file, toCsv([[...COLUMNS], ...kept.map((r) => COLUMNS.map((c) => r[c] ?? ""))]));
   if (appliedFile) writeFileSync(appliedFile, toCsv([[...APPLIED_COLUMNS], ...appliedRecords(kept).map((r) => APPLIED_COLUMNS.map((c) => r[c]))]));
   if (manualFile) writeFileSync(manualFile, toCsv([[...MANUAL_COLUMNS], ...manualRecords(kept).map((r) => MANUAL_COLUMNS.map((c) => r[c]))]));
+  if (file === PATHS.applications) writeFileSync(PATHS.takehome, toCsv([[...TAKEHOME_COLUMNS], ...takehomeRecords(kept).map((r) => TAKEHOME_COLUMNS.map((c) => r[c]))]));
+}
+
+/** The columns of takehome.csv: applications that went out to a company that also wants a take-home assignment. */
+export const TAKEHOME_COLUMNS = ["applied_on", "company", "role", "takehome_link", "instructions", "job_link", "job_id"] as const;
+export type TakehomeRecord = Record<(typeof TAKEHOME_COLUMNS)[number], string>;
+
+/** A take-home is kept in the record as "link | what the form said". */
+export const takeHomeCell = (url: string, text: string) => `${url} | ${text.replace(/\s+/g, " ").trim()}`;
+
+export function takehomeRecords(rows: Row[]): TakehomeRecord[] {
+  return rows
+    .filter((r) => r["App. Status"] === "Applied" && r["Take-home"])
+    .map((r) => {
+      const [link = "", ...rest] = r["Take-home"].split(" | ");
+      return { applied_on: localDate(r["Applied On"]), company: r.Company, role: r["Role / Title"], takehome_link: link, instructions: rest.join(" | "), job_link: r["Job Link"], job_id: r["Job ID"] };
+    });
 }
 
 /** The columns of manual.csv: the jobs the tool set aside for the person, with why and where. */
