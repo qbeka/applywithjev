@@ -48,7 +48,7 @@ Keep a Changelog and the project uses Conventional Commits.
   asking Claude again. An answer the writer marks as true for any company is
   reused on other forms, and JEV decides whether a differently worded
   question is the same one.
-- `applied.csv` at the top of the project folder: only the applications
+- `applications/applied.csv` at the top of the project folder: only the applications
   that were sent, newest first, under plain column names. `log` prints it,
   `log --json` gives the rows as JSON, `log --open` opens it.
 - The demographic yes or no questions can be declined in the profile.
@@ -71,11 +71,14 @@ Keep a Changelog and the project uses Conventional Commits.
   day. Its jobs stay in the queue.
 - A cookie banner that lies over Submit is answered with its most private
   choice (necessary cookies only, or reject). The tool never accepts all.
+- Your records live in one folder, `applications/`: `applied.csv`,
+  `manual.csv`, `takehome.csv` and `all.csv` (was `data/applications.csv`).
+  The folder has a README and is git-ignored apart from it and the example.
 - Claude can be reached through the Claude API on a key in `.env`
   (`ANTHROPIC_API_KEY`) as well as through Claude Code on a subscription.
   `cost` prices Claude calls only on a key; on a subscription it says so.
 - Take-home assignments: a form that asks for one is still sent, and the
-  assignment's link and instructions go to `takehome.csv` for the person.
+  assignment's link and instructions go to `applications/takehome.csv` for the person.
 - The runner's cookies, cache and site data are cleared between runs after
   every `RUN.clearBrowsingEvery` applications.
 - A required group of checkboxes counts as answered once any box in it is
@@ -101,7 +104,7 @@ Keep a Changelog and the project uses Conventional Commits.
   it wants a sign-in, how many pages its form has and what it could not set,
   and starts from those notes next time. `knowledge --share` writes them
   into `knowledge/sites.json` for a pull request.
-- `manual.csv` and `log --manual`: the jobs the tool set aside for the
+- `applications/manual.csv` and `log --manual`: the jobs the tool set aside for the
   person, each with the reason and the link.
 - JEV's ratings and field mappings are cached under a hash of everything
   that went into them, so an unchanged posting or form is not asked about
@@ -119,7 +122,7 @@ Keep a Changelog and the project uses Conventional Commits.
 
 ### Changed
 - A site that wants a sign-in is no longer blocked and left open: its tab is
-  closed, the job is listed in `manual.csv`, and the site is skipped by later
+  closed, the job is listed in `applications/manual.csv`, and the site is skipped by later
   searches. The same goes for a form that asks for a signature or for
   something the profile does not say.
 - `src/browser/formRunner.ts` and `src/cli.ts` are split into smaller

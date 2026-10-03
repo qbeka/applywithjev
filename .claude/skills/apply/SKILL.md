@@ -45,7 +45,7 @@ updated to match.
 | `READY`, no `--submit` | Filled and verified, waiting. | After the user says go: `submit <id>`. |
 | `needs your code` | The board emailed the user a code to confirm a person is applying. The filled form stays open. | Tell the user to run `codes` in their own terminal. See below. |
 | `needs you to pass a robot check` | The site showed a "confirm you are not a robot" check after Submit (BambooHR). The filled form stays open. | The same: the user runs `codes`, passes the check, clicks Submit. |
-| `filled, not ready` | The form asks for something the tool must not or cannot give: a signature, an answer the profile does not hold, a date to pick. The reason is printed. | Nothing. In a sending run the tab is closed and the job is in `manual.csv`. |
+| `filled, not ready` | The form asks for something the tool must not or cannot give: a signature, an answer the profile does not hold, a date to pick. The reason is printed. | Nothing. In a sending run the tab is closed and the job is in `applications/manual.csv`. |
 | `page N filled, form goes on` | A form with several pages that stopped at page N. The reason says why. | The same. |
 | `blocked` | No form could be opened: a sign-in page, an error page. | Nothing. A sign-in site is noted and skipped by later searches. |
 | `Claude: skip` | The form needs a cover letter or references. | Nothing. It is recorded as skipped. |
@@ -74,10 +74,11 @@ answer memory start over, on purpose.
 Run `status` and `log --manual`. Report:
 
 - how many applications were sent
-- what was left for the user and why, from `manual.csv`
+- what was left for the user and why, from `applications/manual.csv`
 - how many forms wait for a code, and that `codes` finishes them
 - the cost the run printed
 
-Tell the user where the records are: `applied.csv` and `manual.csv` at the
-top of the project folder, and `data/applications.csv` for every job
-considered.
+Tell the user where the records are: the `applications/` folder at the top
+of the project, with `applied.csv` for what was sent, `manual.csv` for what
+was left for them, `takehome.csv` for assignments to do, and `all.csv` for
+every job considered.

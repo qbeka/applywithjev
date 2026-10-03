@@ -20,9 +20,10 @@ export const PATHS = {
   bankExample: path.join(ROOT, "data", "bank.example.json"),
   queue: path.join(ROOT, "data", "queue.json"),
   /** Every job the tool considered, with what happened to it. */
-  applications: path.join(ROOT, "data", "applications.csv"),
+  /** The four records a person reads, in one folder at the top of the project: applications/. */
+  applications: path.join(ROOT, "applications", "all.csv"),
   /** Only the applications that were sent, newest first. It sits at the top of the folder so it is easy to find. */
-  applied: path.join(ROOT, "applied.csv"),
+  applied: path.join(ROOT, "applications", "applied.csv"),
   /** Answers the writer has given before, kept so the same question is not paid for twice. */
   memory: path.join(ROOT, "data", "memory.json"),
   cache: path.join(ROOT, "data", "cache"),
@@ -37,9 +38,9 @@ export const PATHS = {
   /** JEV's field mappings of forms, kept so an unchanged form is not mapped again. */
   plans: path.join(ROOT, "data", "cache", "plans.json"),
   /** Jobs the tool could not finish and left for the person, with the reason and the link. */
-  manual: path.join(ROOT, "manual.csv"),
+  manual: path.join(ROOT, "applications", "manual.csv"),
   /** Applications sent to a company that also wants a take-home assignment: the link and the instructions, for the person to do. */
-  takehome: path.join(ROOT, "takehome.csv"),
+  takehome: path.join(ROOT, "applications", "takehome.csv"),
   /** How many applications have gone out since the runner's browsing data was last cleared. */
   browsing: path.join(ROOT, "data", "runs", "browsing.json"),
   runs: path.join(ROOT, "data", "runs"),

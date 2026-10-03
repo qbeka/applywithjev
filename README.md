@@ -1,14 +1,24 @@
 # applywithjev
 
 [![ci](https://github.com/qbeka/applywithjev/actions/workflows/ci.yml/badge.svg)](https://github.com/qbeka/applywithjev/actions/workflows/ci.yml)
-[![codeql](https://github.com/qbeka/applywithjev/actions/workflows/codeql.yml/badge.svg)](https://github.com/qbeka/applywithjev/actions/workflows/codeql.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](.nvmrc)
-[![model: typesafe/jev-1.13](https://img.shields.io/badge/JEV-typesafe%2Fjev--1.13-8A2BE2.svg)](https://openrouter.ai/typesafe/jev-1.13)
 
-This tool finds software internships and new-grad jobs, fills in the
-application forms for you, checks every answer on the page, and sends the
-applications you approve.
+**Find software internships and new-grad jobs, fill in the application
+forms, check every answer on the page, and send the applications you
+approve.** A command-line tool and a set of Claude Code skills that run it
+with you in the loop.
+
+```text
+$ npx tsx src/cli.ts apply --count 10 --submit
+== Zip | Software Engineer Intern - Winter 2027 [9ee657fb069e4a4c] READY in 6.2s, JEV $0.0009
+9ee657fb069e4a4c  submitted (0.99)  https://jobs.ashbyhq.com/zip/.../application
+== Immuta | Product Engineering Intern [8b0ed11ef1c3115b] READY in 27.3s, JEV $0.0015
+8b0ed11ef1c3115b  submitted (1.00)  https://jobs.lever.co/immuta/.../thanks
+...
+10 applied, 0 left for you, 0 skipped
+Applications you sent: applications/applied.csv
+```
 
 You stay in charge. The tool sends nothing until you tell it to, and it
 never writes anything about you that is not in your own profile.
@@ -61,8 +71,8 @@ in place and names the next step.
 4. **Sends the form, if you asked it to.** It then reads the page that comes
    back. It records the job as applied only when that page confirms it.
 5. **Keeps a record.** Every application you sent is one row in
-   `applied.csv`. Every job it had to leave for you is one row in
-   `manual.csv`, with the reason and the link. See
+   `applications/applied.csv`. Every job it had to leave for you is one row in
+   `applications/manual.csv`, with the reason and the link. See
    [Find your applications](#find-your-applications).
 6. **Learns.** After each form it notes how that site's controls took
    their values, so the next form there goes faster and fails less. See
@@ -353,9 +363,10 @@ them up.
 
 ## Find your applications
 
-The applications you sent are in **`applied.csv`**, at the top of the
-project folder. It has one row for each application, newest first. Open it
-in any spreadsheet program, or run:
+Every record is a CSV in the **`applications/`** folder at the top of the
+project. The one you want most is **`applications/applied.csv`**: one row
+for each application you sent, newest first. Open it in any spreadsheet
+program, or run:
 
 ```bash
 npx tsx src/cli.ts log --open
@@ -380,8 +391,8 @@ rows as JSON, run `npx tsx src/cli.ts log --json`.
 
 ### Jobs left for you
 
-`manual.csv`, also at the top of the project folder, lists the jobs the
-tool opened and could not finish. Each row has the company, the role, the
+`applications/manual.csv` lists the jobs the tool opened and could not
+finish. Each row has the company, the role, the
 reason, and the link, best fit first. Apply to these by hand if you want
 them.
 
@@ -393,14 +404,14 @@ npx tsx src/cli.ts log --manual
 
 Some companies ask for a take-home assignment next to the application. The
 tool sends the application anyway and lists the assignment in
-`takehome.csv`, also at the top of the project folder: the company, the
-role, the assignment's link, and what the form said about it. Do these by
+`applications/takehome.csv`: the company, the role, the assignment's
+link, and what the form said about it. Do these by
 hand; the company will only read your application once it has the
 assignment.
 
 ### Every job considered
 
-`data/applications.csv` is the full record. It lists every job the tool
+`applications/all.csv` is the full record. It lists every job the tool
 looked at, including the ones it skipped, with the reason. Its first 15
 columns match a common job-tracking sheet, so you can paste it into one.
 To print it, run `npx tsx src/cli.ts log --all`.
@@ -579,6 +590,18 @@ enforces it.
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes each step.
 [docs/JEV.md](docs/JEV.md) explains how the tool asks JEV its questions.
 [docs/SOURCES.md](docs/SOURCES.md) lists where the jobs come from.
+
+### Where things are
+
+| Folder | What is in it |
+|---|---|
+| `applications/` | Your records: `applied.csv`, `manual.csv`, `takehome.csv`, `all.csv`. Git-ignored except the README and the example. |
+| `data/` | Your profile, drafts, voice guide, resume, queue and caches. Git-ignored except the examples. |
+| `knowledge/` | What runs have learned about job sites, shared through the repo. No personal data. |
+| `src/` | The program: `cli.ts`, `config.ts` (every setting), `run/` (the apply loop), `browser/` (Chrome), `forms/` (reading and filling pages), `answers/` (the writer and the memory), `jobs/` and `sources/` (finding and rating), `knowledge/`, `log/` |
+| `tests/` | Offline tests on captured, scrubbed fixtures |
+| `docs/` | Setup, architecture, JEV, sources, safety |
+| `.claude/skills/` | `/setup`, `/discover`, `/apply`, `/profile` |
 
 ## What is planned
 

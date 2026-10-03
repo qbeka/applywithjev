@@ -1,6 +1,6 @@
 /**
  * Reads a CSV export of the user's tracking sheet (the same fifteen columns
- * as data/applications.csv) and turns rows that are not yet applied into
+ * as applications/all.csv) and turns rows that are not yet applied into
  * jobs for the pipeline.
  */
 import { readFileSync } from "node:fs";

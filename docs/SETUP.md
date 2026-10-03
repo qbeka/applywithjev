@@ -111,7 +111,7 @@ npx tsx src/cli.ts discover
 ```
 
 About a minute. It prints totals and the top 50. `npx tsx src/cli.ts status`
-shows skip reasons. `data/queue.json` and `data/applications.csv` now exist.
+shows skip reasons. `data/queue.json` and `applications/all.csv` now exist.
 
 ## 8. Rehearse, then apply
 
@@ -132,8 +132,8 @@ npx tsx src/cli.ts apply --count 10 --submit   # or do it all in one go
 
 Stay near the computer: a "prove you are human" test or an emailed code is
 yours to handle, in the runner's window. `npx tsx src/cli.ts log` lists what you
-sent; the same list is `applied.csv` at the top of the project folder, and
-`data/applications.csv` is the full record of every job considered. Inside
+sent; the same list is `applications/applied.csv`, and
+`applications/all.csv` is the full record of every job considered. Inside
 Claude Code, `/apply` runs the same loop and deals with what needs a second
 look.
 
@@ -146,7 +146,7 @@ again. Changing your profile, drafts or voice guide makes it start over.
 
 - A job on a site that wants a sign-in, a form that asks for a signature,
   and a form with a required question your profile cannot answer are not
-  sent. They are listed in `manual.csv` at the top of the project folder,
+  sent. They are listed in `applications/manual.csv`,
   each with the reason and the link. `npx tsx src/cli.ts log --manual`
   prints the list.
 - When a board emails you a code after you send, the filled form stays

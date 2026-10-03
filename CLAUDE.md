@@ -17,8 +17,8 @@ doctor` says what is in place and what to do next.
   field cannot be answered truthfully from the profile, the job is marked
   `needs_review`, not answered.
 - **No PII in git.** `data/profile.json`, `data/bank.json`,
-  `data/voice.local.md`, the resume, `data/applications.csv`, `applied.csv`,
-  `manual.csv`, `data/memory.json`, `data/knowledge.json`,
+  `data/voice.local.md`, the resume, `applications/all.csv`, `applications/applied.csv`,
+  `applications/manual.csv`, `data/memory.json`, `data/knowledge.json`,
   `data/queue.json` and everything under `data/cache/` and `data/runs/` are
   git-ignored. `knowledge/sites.json` is tracked on purpose: it holds site
   names and kinds of controls, and `sanitize` keeps everything else out. Tests use `data/profile.example.json` only. Never paste real
@@ -36,7 +36,7 @@ doctor` says what is in place and what to do next.
   or anything else is never given the resume.
 - **Never sign in, never type into a login.** A page with a password box
   is blocked: the tab is closed, the job goes on the by-hand list
-  (`manual.csv`), and the site is noted so the next discover skips it. The
+  (`applications/manual.csv`), and the site is noted so the next discover skips it. The
   tool creates no accounts, stores no site passwords and solves no CAPTCHAs.
 - **A human check is the person's to pass.** That includes a code a board
   emails to confirm a person is applying. No code is ever read from mail or
@@ -44,7 +44,7 @@ doctor` says what is in place and what to do next.
   of the person.
 - **What the tool cannot finish truthfully, it sets aside.** A form that
   asks for a signature, or for something the profile does not say, is
-  closed and listed in `manual.csv` with the reason (`src/run/outcome.ts`).
+  closed and listed in `applications/manual.csv` with the reason (`src/run/outcome.ts`).
   It is never answered to get it through.
 - **No secrets in code or logs.** The OpenRouter key is read from `.env` by
   `src/config.ts` and nowhere else. Error output is redacted in

@@ -215,7 +215,7 @@ it aside for the person with a reason, or skip it. Set aside: a sign-in
 page, a form that asks for a signature, a required question the profile
 cannot answer, a form with more pages than `RUN.maxPages`, a form that would
 not move to its next page. In a sending run the tab is closed and the job
-goes into `manual.csv`. A form waiting on an emailed code is the one
+goes into `applications/manual.csv`. A form waiting on an emailed code is the one
 exception: its tab stays open, and `codes` shows it to the person.
 
 ## What the tool learns
@@ -319,9 +319,9 @@ part of correctness.
 | `data/profile.json` | `ProfileSchema` | the user | everything |
 | `data/bank.json`, `data/voice.local.md` | drafts per intent; the voice guide | the user | the writer |
 | `data/queue.json` | `QueueFile` v1 | discover, `apply`, `mark` | everything |
-| `data/applications.csv` | 25 columns, first 15 match the user's sheet. Every job considered | discover, `apply`, `submit`, `mark` | the user, `log --all` |
-| `applied.csv` | 15 columns with plain names. Only what was sent, newest first | the same commands | the user, `log` |
-| `manual.csv` | 9 columns. Jobs left for the person, with the reason and the link | the same commands | the user, `log --manual` |
+| `applications/all.csv` | 25 columns, first 15 match the user's sheet. Every job considered | discover, `apply`, `submit`, `mark` | the user, `log --all` |
+| `applications/applied.csv` | 15 columns with plain names. Only what was sent, newest first | the same commands | the user, `log` |
+| `applications/manual.csv` | 9 columns. Jobs left for the person, with the reason and the link | the same commands | the user, `log --manual` |
 | `knowledge/sites.json` | `Knowledge` v1: site notes shipped with the repository | `knowledge --share` | every fill, discover |
 | `data/knowledge.json` | the same, learned on this machine | every fill, the pipeline | every fill, discover, `knowledge` |
 | `data/memory.json` | `MemoryFile` v1: resolutions by form page, and reusable answers by question | `resolve`, `apply` | `resolve`, `apply`, `memory` |

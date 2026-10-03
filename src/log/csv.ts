@@ -1,7 +1,7 @@
 /**
  * Two files, written together.
  *
- * data/applications.csv is the record of every job considered and what
+ * applications/all.csv is the record of every job considered and what
  * happened. Its first fifteen columns match the user's tracking sheet so the
  * file pastes straight into it; the rest are the tool's own.
  *

@@ -123,9 +123,9 @@ them without stopping at each one. Then follow the `/apply` skill. Nothing
 is sent before the user says so in their own words.
 
 When the run ends, show `npx tsx src/cli.ts log` and tell them where the
-records are: `applied.csv` lists what was sent, and `manual.csv` lists the
-jobs the tool left for them with the reason and the link. Both are at the
-top of the project folder.
+records are: the `applications/` folder at the top of the project, where
+`applied.csv` lists what was sent and `manual.csv` lists the jobs the tool
+left for them with the reason and the link.
 
 Tell them two things the tool will not do, so they are not surprised: it
 does not sign in to any site, and it does not pass a "prove you are human"
