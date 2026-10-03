@@ -33,7 +33,7 @@ process.stdout.on("error", (err: NodeJS.ErrnoException) => {
   if (err.code === "EPIPE") process.exit(0);
 });
 const program = new Command();
-program.name("applywithjev").description("Find and rate software jobs with JEV, fill and check each application form in Chrome, and let Claude Code write what needs writing.").version("0.1.0");
+program.name("applywithjev").description("Find and rate software jobs with JEV, fill and check each application form in Chrome, and let Claude write what needs writing.").version("0.1.0");
 
 const int = (v: string) => parseInt(v, 10);
 const whereTheRecordIs = () => `Applications you sent: ${PATHS.applied}\nJobs left for you to do by hand: ${PATHS.manual}\nTake-home assignments to do: ${PATHS.takehome}\nEvery job considered: ${PATHS.applications}`;
@@ -328,7 +328,7 @@ program
 program
   .command("doctor")
   .description("Check that everything a run needs is in place, and say what to do next")
-  .option("--online", "also make one tiny JEV call and one tiny Claude Code call to prove the key and the sign-in work")
+  .option("--online", "also make one tiny JEV call and one tiny Claude call to prove the key and the sign-in work")
   .option("--json")
   .action(async (o: { online?: boolean; json?: boolean }) => {
     const checks = await runChecks(!!o.online);

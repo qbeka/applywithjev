@@ -206,7 +206,8 @@ export const BROWSER = {
 
 /**
  * The writer for what JEV cannot type: open questions, and fields it was unsure of.
- * It is Claude Code itself, run headless, so it uses the user's own login and no API key.
+ * By default it is Claude Code itself, run headless, so it uses the person's own subscription and
+ * no API key. With ANTHROPIC_API_KEY in .env the Claude API is called directly instead.
  */
 export const WRITER = {
   command: "claude",
@@ -229,7 +230,29 @@ export const WRITER = {
    * one-hour cache costs 2 times.
    */
   env: { FORCE_PROMPT_CACHING_5M: "1" },
+  /** The Claude API, used instead of Claude Code when ANTHROPIC_API_KEY is in .env. */
+  apiUrl: "https://api.anthropic.com/v1/messages",
+  apiVersion: "2023-06-01",
+  maxOutputTokens: 4_096,
+  /**
+   * Claude API prices per million tokens for the model above, only to report what API calls cost.
+   * Check them against https://www.anthropic.com/pricing when the model changes.
+   */
+  apiPricesPerMillion: { input: 3, cacheWrite: 3.75, cacheRead: 0.3, output: 15 },
 } as const;
+
+export type WriterBackend = "claude-code" | "api";
+
+/**
+ * How Claude is reached. Claude Code runs headless on the person's own subscription and is the
+ * default. With ANTHROPIC_API_KEY in .env the Claude API is called directly and billed to that key.
+ * WRITER_BACKEND=claude-code in .env keeps Claude Code even when a key is present.
+ */
+export function writerBackend(): WriterBackend {
+  const asked = (process.env.WRITER_BACKEND ?? "").trim();
+  if (asked === "claude-code" || asked === "api") return asked;
+  return process.env.ANTHROPIC_API_KEY ? "api" : "claude-code";
+}
 
 /** The answer memory: what the writer already answered, reused instead of asked again. */
 export const MEMORY = {

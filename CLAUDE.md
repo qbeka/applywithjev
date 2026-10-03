@@ -53,9 +53,11 @@ doctor` says what is in place and what to do next.
   question (which field, which option, which page, how good a fit) goes
   through JEV with criteria written as definitions. Free text and the fields
   JEV was unsure of are Claude's job, only from the facts in the profile.
-  The CLI calls no chat model API: when it needs Claude it runs Claude Code
-  headless (`src/answers/resolve.ts`) on the model and effort in
-  `WRITER` in `src/config.ts`, with no tools.
+  When the CLI needs Claude it runs Claude Code headless on the person's
+  subscription, or, with `ANTHROPIC_API_KEY` in `.env`, calls the Claude
+  Messages API directly (`src/answers/resolve.ts`), on the model and effort
+  in `WRITER` in `src/config.ts`, with no tools. Those are the only two
+  ways; no other model API is called for writing.
 - **Nothing about one candidate in source.** Years, cities, drafts and
   phrasing come from the profile, `data/bank.json` and
   `data/voice.local.md`.

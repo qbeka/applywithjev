@@ -9,7 +9,7 @@
 | **Code** (`src/`) | Which sources to read, deterministic filters (ATS, age, flags, title words), location tier from strings, work authorization per country, the score formula, what the CSV says | Judge meaning |
 | **JEV** | Every typed judgement: fit questions per job, which key fills a field, which option, whether a checkbox applies, what kind of page this is | Write text, see pixels, hold state |
 | **The runner** (`src/browser/`) | Opens the form, reads it, writes values with real input events, attaches the resume, reads every value back, clicks Submit on a ready form | Decide what a value should be |
-| **Claude Code** (headless writer, and the skills) | Free-text answers, the fields JEV was unsure about, whether a required field can be answered truthfully at all | Invent facts, override authorization, create accounts, touch the browser |
+| **Claude** (the headless writer, through Claude Code or the Claude API; and the skills, through Claude Code) | Free-text answers, the fields JEV was unsure about, whether a required field can be answered truthfully at all | Invent facts, override authorization, create accounts, touch the browser |
 
 The rule of thumb: if a question has a finite set of answers, it is JEV's.
 If it needs a sentence, it is Claude's. If it is a rule, it is code.
@@ -68,7 +68,7 @@ Timing on 2026-10-02: 4,748 unique postings, 478 rated, 61 seconds, $0.075.
 | `src/browser/submit.ts` | Sending a form and reading what the page became |
 | `src/forms/*.js` | The three scripts that run inside the page |
 | `src/forms/mapForm.ts` | Asking JEV what goes in each field |
-| `src/answers/` | The writer (headless Claude Code), the answer memory, drafts and voice |
+| `src/answers/` | The writer (headless Claude Code, or the Claude API on a key), the answer memory, drafts and voice |
 | `src/knowledge/sites.ts` | What the tool has learned about each site |
 | `src/log/` | The record files and the cost summary |
 | `src/util/` | Pacing, the JEV answer cache, dates, text, HTTP |
@@ -294,8 +294,9 @@ prints it for any period. What keeps the writer cheap:
 - The writer returns the two sheet notes with its answers. Jobs it was not
   asked about get their notes in one call for the whole run.
 
-Measured on ten forms on 2026-10-02: JEV $0.012, Claude $0.17 at API prices.
-The same ten forms again: Claude $0.018. The README has the table.
+Measured over 118 applications on 1 and 2 October 2026: JEV $1.43 in all,
+about 1.2 cents per application. Claude ran on a subscription through
+Claude Code. The README has the table.
 
 ## Speed
 
@@ -334,10 +335,10 @@ part of correctness.
 
 ## Setup and `doctor` (`src/doctor.ts`)
 
-`doctor` runs a list of checks (Node, Chrome, Claude Code, the key, the
+`doctor` runs a list of checks (Node, Chrome, Claude, the key, the
 profile, the resume, the voice guide, the drafts, the queue) and names the
 first thing that blocks a run. `--online` adds one tiny JEV call and one
-tiny Claude Code call. The `/setup` skill runs it after every step. The
+tiny Claude call. The `/setup` skill runs it after every step. The
 questions the skill asks, and the profile field each answer fills, are in
 `.claude/skills/setup/questions.md`.
 

@@ -71,6 +71,9 @@ Keep a Changelog and the project uses Conventional Commits.
   day. Its jobs stay in the queue.
 - A cookie banner that lies over Submit is answered with its most private
   choice (necessary cookies only, or reject). The tool never accepts all.
+- Claude can be reached through the Claude API on a key in `.env`
+  (`ANTHROPIC_API_KEY`) as well as through Claude Code on a subscription.
+  `cost` prices Claude calls only on a key; on a subscription it says so.
 - Take-home assignments: a form that asks for one is still sent, and the
   assignment's link and instructions go to `takehome.csv` for the person.
 - The runner's cookies, cache and site data are cleared between runs after

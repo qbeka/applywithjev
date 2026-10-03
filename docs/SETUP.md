@@ -19,7 +19,7 @@ At any point, this command lists what is in place and names the next step:
 npx tsx src/cli.ts doctor
 ```
 
-Add `--online` to also make one tiny JEV call and one tiny Claude Code call,
+Add `--online` to also make one tiny JEV call and one tiny Claude call,
 which proves the key and the sign-in work.
 
 The rest of this page is the same setup done by hand.
@@ -28,7 +28,7 @@ The rest of this page is the same setup done by hand.
 
 - **Node 22 or newer**: `node --version`. Install from nodejs.org or `brew install node`.
 - **Google Chrome**. The runner starts its own window with its own profile; your everyday Chrome is not touched.
-- **Claude Code** installed and signed in with `/login`. The tool runs it headless (`claude -p`) on Sonnet 5.5 at high effort to write the open answers.
+- **Claude**, one of two ways. Either **Claude Code** installed and signed in with `/login`: the tool runs it headless (`claude -p`) on Sonnet 5.5 at high effort, on your subscription. Or a **Claude API key** in `.env` as `ANTHROPIC_API_KEY`: the tool calls the Claude API directly, billed to the key. The skills need Claude Code; the commands work either way.
 - An **OpenRouter** account and key from https://openrouter.ai/keys. Put a few dollars of credit on it; a full run costs cents.
 
 ## 2. Clone and install
@@ -178,7 +178,7 @@ Your `data/` files are untouched by updates.
 | An answer is stale after you changed something on the form by hand | `npx tsx src/cli.ts apply --fresh <id>`, or `memory --forget <company>` |
 | `No profile at data/profile.json` | Step 4 |
 | `Chrome did not start on port 9333` | Install Google Chrome, or set `BROWSER.chromePath` in `src/config.ts` |
-| `could not run claude` | Install Claude Code and run `claude` once to log in |
+| `could not run claude` | Install Claude Code and run `claude` once to log in, or put `ANTHROPIC_API_KEY` in `.env` |
 | A form comes back `blocked: no form found` | The page was a login, a closed posting, or a board the runner does not walk yet. The reason is in the CSV |
 | A form comes back `filled, not ready` | The reason names the field. Add a standing answer to the profile, or finish it by hand in the window and `submit <id> --force` |
 | Forms on one site start failing with `refused` | The site is rate-limiting. Wait a few minutes; add its host to `RUN.gentleHosts` |

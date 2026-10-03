@@ -31,8 +31,15 @@ describe("summarizeCost", () => {
     expect(c.jev.rate).toBeUndefined();
     expect(c.claude.resolve).toBeUndefined();
   });
-  it("prints a per-form and a per-ten figure, and survives an empty log", () => {
+  it("prints a per-form and a per-ten figure, with Claude priced only when the Claude API is used", () => {
+    process.env.WRITER_BACKEND = "api";
     expect(formatCost(summarizeCost(jev, writer))).toMatch(/Per 10 forms: JEV \$0\.0\d+ \+ Claude \$0\.3000 = \$0\.3\d+/);
     expect(formatCost(summarizeCost([], []))).toContain("no calls recorded");
+    process.env.WRITER_BACKEND = "claude-code";
+    const text = formatCost(summarizeCost(jev, writer));
+    expect(text).toContain("on your subscription, no separate bill");
+    expect(text).not.toContain("+ Claude");
+    expect(text).toContain("Total billed (JEV)");
+    delete process.env.WRITER_BACKEND;
   });
 });

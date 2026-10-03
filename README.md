@@ -13,13 +13,17 @@ applications you approve.
 You stay in charge. The tool sends nothing until you tell it to, and it
 never writes anything about you that is not in your own profile.
 
-If you have a Claude subscription, the only bill is about 1 cent for every
-10 applications. See [What it costs](#what-it-costs).
+Claude runs on your own Claude subscription, through Claude Code, or on
+your own Claude API key. The only separate bill is JEV, through OpenRouter:
+118 applications cost $1.43 in our own use, about 1.2 cents each. See
+[What it costs](#what-it-costs).
 
 ## Start in three steps
 
 You need a Mac with Google Chrome, [Node.js](https://nodejs.org) 22 or
-newer, and [Claude Code](https://code.claude.com), signed in.
+newer, and [Claude Code](https://code.claude.com), signed in. (You can
+also run the commands without Claude Code, on a Claude API key. See
+[Claude Code or the Claude API](#claude-code-or-the-claude-api).)
 
 1. Get the code and open Claude Code in it.
 
@@ -69,51 +73,43 @@ in place and names the next step.
 Two services do the thinking.
 
 - **JEV** answers the questions that have a fixed set of answers, such as
-  "which of my details goes in this box?" You pay for it through your
-  OpenRouter key. **This is the only bill you get if you have a Claude
-  subscription.**
-- **Claude Code** writes the answers that need sentences, such as "Why do
-  you want to work here?" It runs on the Sonnet 5.5 model at high effort.
-  With a Claude subscription, these calls use your plan's allowance and you
-  get no separate bill. Without a subscription, you pay for them at API
-  prices.
+  "which of my details goes in this box?" and "how good a fit is this
+  job?" You pay for it through your OpenRouter key. **This is the only
+  separate bill.**
+- **Claude** writes the answers that need sentences, such as "Why do you
+  want to work here?" It runs on the Sonnet 5.5 model at high effort,
+  through Claude Code on your own Claude subscription, so there is no
+  separate bill for it. If you would rather use a Claude API key, you can,
+  and then those calls are billed to that key. See
+  [Claude Code or the Claude API](#claude-code-or-the-claude-api).
 
-### What you pay
+### What JEV cost us
 
-| | With a Claude subscription | Paying Claude at API prices |
+Measured on our own use from 1 to 2 October 2026: 118 applications sent,
+255 form fills counting rehearsals and retries, and 4 searches that rated
+2,182 postings.
+
+| Step | Calls | Cost |
 |---|---:|---:|
-| Finding jobs, each time you search | $0.06 to $0.07 | $0.06 to $0.07 |
-| 10 applications | about $0.01 | about $0.19 |
-| 50 applications | about $0.06 | about $0.93 |
-| One search and 50 applications | about $0.13 | about $1.00 |
+| Rating postings in 4 searches | 2,182 | $0.35 |
+| Deciding what goes in each field | 1,197 | $1.06 |
+| Reading the page after Submit, matching remembered answers | 456 | $0.02 |
+| **Total for 118 applications** | | **$1.43** |
 
-Five dollars of OpenRouter credit pays for about 70 searches, or for about
-4,000 applications.
+That is about 1.2 cents per application with the searches included, and
+0.9 cents per application for the filling alone. Five dollars of OpenRouter
+credit pays for about 400 applications.
 
-### How we measured it
+What changes these numbers:
 
-We filled 10 application forms on 2 October 2026 and recorded every call.
-
-| Step | Service | Calls | Tokens in | Tokens out | Cost |
-|---|---|---:|---:|---:|---:|
-| Decide what goes in each field | JEV | 12 | 284,453 | 82,675 | $0.012 |
-| Read the page after sending | JEV | 10 | about 11,000 | about 1,500 | under $0.001 |
-| Write the open answers | Claude Code | 6 | 72,327 | 6,568 | $0.144 |
-| Write two notes per job for your record | Claude Code | 1 | 4,605 | 1,773 | $0.029 |
-| **Total for 10 applications** | | | | | **about $0.19** |
-
-The JEV rows add up to about 1 cent. The Claude rows add up to about 17
-cents at API prices.
-
-What these numbers leave out, and what changes them:
-
-- **Finding jobs is separate.** One search rated 352 jobs for $0.058 and
-  another rated 462 jobs for $0.074. JEV does all of it.
-- **Forms with more open questions cost more.** Four of the 10 forms had no
-  open question and needed no Claude call at all.
-- **The "read the page" row is from real applications.** A rehearsal sends
-  nothing, so it never reaches that step.
-- **A subscription has a usage allowance.** These calls count toward it.
+- **Forms with more fields cost more to map.** A long form is one JEV call
+  of a few thousand tokens; a short one is a fraction of a cent.
+- **A rehearsal costs the same as a real fill**, except the "read the page
+  after Submit" step, which only a real application reaches.
+- **A second search on the same day costs close to nothing**, because a
+  posting that has not changed keeps its rating.
+- **Claude calls count toward your subscription's usage allowance.** On
+  an API key, `cost` shows what they cost instead.
 
 To see what you have spent, run `npx tsx src/cli.ts cost`. Every run that
 fills forms also prints its own cost at the end.
@@ -124,7 +120,7 @@ fills forms also prints its own cost at the end.
   computer. When you rehearse a form and then send it, the tool reuses the
   answers you read in the rehearsal and does not ask Claude again. We ran
   the same 10 forms a second time: Claude was asked about 1 form instead of
-  6, and the Claude cost fell from $0.144 to $0.018.
+  6.
 - **It reuses an answer on another company's form only when that is safe.**
   Claude marks an answer as reusable only if it would be true for any
   company. JEV then checks that the new question asks for the same thing.
@@ -444,7 +440,8 @@ lives in the code.
 - The job text and the facts in your profile go to OpenRouter when JEV rates
   a job or maps a form.
 - The job text, your facts and the open questions go to Anthropic, through
-  your own Claude Code sign-in, when a form has questions for Claude.
+  your own Claude Code sign-in or your own Claude API key, when a form has
+  questions for Claude.
 - Your answers go to the employer's job board.
 - What the tool learns about sites stays on your computer unless you choose
   to share it. See [How the tool learns](#how-the-tool-learns).
@@ -525,6 +522,21 @@ Claude Code changes any of them with you.
   once, how fast the tool works on each site, which Claude model writes,
   and whether the tool remembers answers.
 
+## Claude Code or the Claude API
+
+The tool reaches Claude in one of two ways. Both run the same model and
+the same prompts, and everything else works the same.
+
+| | Claude Code (the default) | The Claude API |
+|---|---|---|
+| What you need | Claude Code installed and signed in | A Claude API key in `.env` as `ANTHROPIC_API_KEY` |
+| What it costs | Your Claude subscription's allowance. No separate bill. | Billed to your key at API prices. `cost` shows the amount. |
+| The skills `/setup`, `/apply`, `/discover`, `/profile` | Work | Need Claude Code too. Without it, run the commands yourself. |
+
+With a key in `.env`, the tool uses the API. To keep using Claude Code
+while a key is present, add `WRITER_BACKEND=claude-code` to `.env`. Run
+`npx tsx src/cli.ts doctor --online` to prove either one works.
+
 ## Commands
 
 Run each command as `npx tsx src/cli.ts <command>`.
@@ -544,7 +556,7 @@ Run each command as `npx tsx src/cli.ts <command>`.
 | `set <id> --values file.json` | Writes answers you chose into a filled form |
 | `log [--manual] [--all] [--json] [--open]` | Lists your applications, or with `--manual` the jobs left for you |
 | `status` | Shows totals and the reasons jobs were skipped |
-| `cost [--since time]` | Shows what you have spent on JEV and Claude |
+| `cost [--since time]` | Shows what you have spent on JEV, and on Claude when you use an API key |
 | `knowledge [--trouble] [--share]` | Shows what the tool has learned about sites, or shares it |
 | `memory [--forget text] [--clear]` | Shows or clears the answers the tool remembers |
 | `survey` | Shows how well recent fills went |
@@ -558,7 +570,7 @@ Three parts share the work.
 |---|---|
 | [JEV](https://openrouter.ai/typesafe/jev-1.13) | Makes every choice that has a fixed set of answers. It returns probabilities, not text. One call takes about half a second. |
 | This program | Finds jobs, applies the rules, drives Chrome, walks each form page by page, checks every answer on the page, and keeps its notes. |
-| [Claude Code](https://code.claude.com) | Writes the answers that need sentences. It also decides the few fields JEV was unsure about. It gets your facts and the open questions, and it has no other tools. |
+| [Claude](https://claude.com), through Claude Code or the Claude API | Writes the answers that need sentences. It also decides the few fields JEV was unsure about. It gets your facts and the open questions, and it has no other tools. |
 
 The rule is simple. If a question has a fixed set of answers, JEV answers
 it. If it needs a sentence, Claude writes it. If it is a rule, the code

@@ -7,7 +7,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { BROWSER, DOCTOR, PATHS, ROOT, WRITER } from "./config.js";
+import { BROWSER, DOCTOR, PATHS, ROOT, WRITER, writerBackend } from "./config.js";
+import { askWriter } from "./answers/resolve.js";
 import { JevClient } from "./jev/client.js";
 import { noul } from "./jev/questions.js";
 import { loadQueue } from "./jobs/queue.js";
@@ -35,10 +36,14 @@ export function checkChrome(file: string = BROWSER.chromePath): Check {
   return { name: "Google Chrome", ok: existsSync(file), detail: existsSync(file) ? "installed" : `not found at ${file}`, fix: "Install Google Chrome from https://www.google.com/chrome, or set BROWSER.chromePath in src/config.ts" };
 }
 
+/** How Claude is reached: Claude Code on the person's subscription, or the Claude API on their own key. */
 export function checkClaude(): Check {
+  if (writerBackend() === "api") {
+    return { name: "Claude", ok: true, detail: `the Claude API, billed to ANTHROPIC_API_KEY in .env (${WRITER.model})`, fix: "" };
+  }
   const r = spawnSync(WRITER.command, ["--version"], { encoding: "utf8" });
   const ok = r.status === 0;
-  return { name: "Claude Code", ok, detail: ok ? r.stdout.trim() : "the claude command was not found", fix: "Install Claude Code from https://code.claude.com, then run `claude` once and sign in" };
+  return { name: "Claude", ok, detail: ok ? `Claude Code ${r.stdout.trim()} on your subscription` : "the claude command was not found", fix: "Install Claude Code from https://code.claude.com and run `claude` once to sign in, or put ANTHROPIC_API_KEY in .env to use the Claude API instead" };
 }
 
 export function checkKey(key = process.env.OPENROUTER_API_KEY ?? ""): Check {
@@ -102,16 +107,24 @@ export async function checkKeyOnline(): Promise<Check> {
   }
 }
 
-/** One tiny headless Claude Code call: proves it is signed in and the writer's model is available. */
-export function checkClaudeOnline(): Check {
+/** One tiny Claude call: proves the sign-in or the key works and the writer's model is available. */
+export async function checkClaudeOnline(): Promise<Check> {
+  if (writerBackend() === "api") {
+    try {
+      const text = await askWriter("ok?", "Reply with the single word ok.");
+      return { name: "Claude answers", ok: /ok/i.test(text), detail: `the Claude API, ${WRITER.model}`, fix: "Check ANTHROPIC_API_KEY in .env at https://console.anthropic.com" };
+    } catch (err) {
+      return { name: "Claude answers", ok: false, detail: (err instanceof Error ? err.message : String(err)).slice(0, 200), fix: "Check ANTHROPIC_API_KEY in .env at https://console.anthropic.com" };
+    }
+  }
   const fix = "Run `claude` once in a terminal and sign in";
   const r = spawnSync(WRITER.command, ["-p", "--model", WRITER.model, "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config", "--system-prompt", "Reply with the single word ok."], { input: "ok?", encoding: "utf8", timeout: DOCTOR.claudeTimeoutMs, env: { ...process.env, ...WRITER.env } });
   try {
     const envelope = JSON.parse(r.stdout) as { is_error?: boolean; result?: string };
     const ok = r.status === 0 && !envelope.is_error;
-    return { name: "Claude Code answers", ok, detail: ok ? `signed in, ${WRITER.model} at ${WRITER.effort} effort` : String(envelope.result).slice(0, 200), fix };
+    return { name: "Claude answers", ok, detail: ok ? `Claude Code signed in, ${WRITER.model} at ${WRITER.effort} effort` : String(envelope.result).slice(0, 200), fix };
   } catch {
-    return { name: "Claude Code answers", ok: false, detail: (r.stderr || "no answer").slice(0, 200), fix };
+    return { name: "Claude answers", ok: false, detail: (r.stderr || "no answer").slice(0, 200), fix };
   }
 }
 
@@ -122,7 +135,7 @@ export async function runChecks(online: boolean): Promise<Check[]> {
   const checks = [checkNode(), checkChrome(), claude, key, profileCheck, checkResume(profile), ...checkOwnWords(), checkQueue()];
   if (online) {
     if (key.ok) checks.push(await checkKeyOnline());
-    if (claude.ok) checks.push(checkClaudeOnline());
+    if (claude.ok) checks.push(await checkClaudeOnline());
   }
   return checks;
 }

@@ -7,7 +7,7 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { z } from "zod";
-import { PATHS, WRITER } from "../config.js";
+import { PATHS, WRITER, writerBackend } from "../config.js";
 import type { QueueEntry } from "../jobs/queue.js";
 import type { Profile } from "../profile/schema.js";
 import { BANK_DRAFTS, BANK_INTENTS } from "./bank.js";
@@ -129,7 +129,8 @@ export type WriterCall = { at: string; purpose: "resolve" | "log"; jobId: string
 /** What the writer has used in this process. costUsd is what the calls would cost at API prices; on a Claude subscription they draw on the plan instead. */
 export const writerUsage = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
-type Envelope = { result?: string; is_error?: boolean; total_cost_usd?: number; duration_ms?: number; usage?: { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number; output_tokens?: number } };
+type Usage = { input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_read_input_tokens?: number | undefined; output_tokens?: number | undefined };
+type Envelope = { result?: string; is_error?: boolean; total_cost_usd?: number; duration_ms?: number; usage?: Usage | undefined };
 
 function recordWriterCall(envelope: Envelope, meta: { purpose: WriterCall["purpose"]; jobId: string }): void {
   const u = envelope.usage ?? {};
@@ -148,6 +149,7 @@ function recordWriterCall(envelope: Envelope, meta: { purpose: WriterCall["purpo
   writerUsage.inputTokens += call.inputTokens + call.cacheWriteTokens + call.cacheReadTokens;
   writerUsage.outputTokens += call.outputTokens;
   writerUsage.costUsd += call.costUsd;
+  if (process.env.NODE_ENV === "test") return; // a test's fake call is not spend
   try {
     mkdirSync(PATHS.runs, { recursive: true });
     appendFileSync(PATHS.writerUsage, JSON.stringify(call) + "\n");
@@ -172,7 +174,48 @@ async function runWriter(prompt: string, system: string, meta: { purpose: Writer
   return first;
 }
 
+/** The shape of a Claude API reply, as far as the writer reads it. */
+const ApiReply = z.object({
+  content: z.array(z.object({ type: z.string(), text: z.string().optional() })),
+  usage: z.object({ input_tokens: z.number().optional(), cache_creation_input_tokens: z.number().optional(), cache_read_input_tokens: z.number().optional(), output_tokens: z.number().optional() }).optional(),
+});
+
+/** What one API call cost, from its token counts and the prices in WRITER. */
+export function apiCostUsd(u: Usage): number {
+  const p = WRITER.apiPricesPerMillion;
+  return ((u.input_tokens ?? 0) * p.input + (u.cache_creation_input_tokens ?? 0) * p.cacheWrite + (u.cache_read_input_tokens ?? 0) * p.cacheRead + (u.output_tokens ?? 0) * p.output) / 1_000_000;
+}
+
+/** The Claude API, billed to ANTHROPIC_API_KEY. The system prompt is cached by the provider, as with Claude Code. */
+async function callApi(prompt: string, system: string, meta: { purpose: WriterCall["purpose"]; jobId: string }): Promise<string> {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error("ANTHROPIC_API_KEY is not set. Add it to .env, or remove WRITER_BACKEND=api to use Claude Code.");
+  const started = Date.now();
+  const res = await fetch(WRITER.apiUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": WRITER.apiVersion },
+    body: JSON.stringify({
+      model: WRITER.model,
+      max_tokens: WRITER.maxOutputTokens,
+      system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: prompt }],
+    }),
+    signal: AbortSignal.timeout(WRITER.timeoutMs),
+  });
+  const body: unknown = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    // The error body never carries the key; the message is enough and nothing else is shown.
+    const message = typeof body === "object" && body && "error" in body ? String((body as { error?: { message?: string } }).error?.message ?? "") : "";
+    throw new Error(`the Claude API answered ${res.status}${message ? `: ${message.slice(0, 200)}` : ""}`);
+  }
+  const reply = ApiReply.parse(body);
+  const text = reply.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
+  recordWriterCall({ result: text, usage: reply.usage, total_cost_usd: apiCostUsd(reply.usage ?? {}), duration_ms: Date.now() - started }, meta);
+  return text;
+}
+
 function callWriter(prompt: string, system: string, meta: { purpose: WriterCall["purpose"]; jobId: string }): Promise<string> {
+  if (writerBackend() === "api") return callApi(prompt, system, meta);
   return new Promise((resolve, reject) => {
     mkdirSync(WRITER.cwd, { recursive: true });
     const child = spawn(
@@ -207,6 +250,9 @@ function callWriter(prompt: string, system: string, meta: { purpose: WriterCall[
     child.stdin.end(prompt);
   });
 }
+
+/** One plain writer call with a system prompt, for checks. Recorded like any other call. */
+export const askWriter = (prompt: string, system: string): Promise<string> => callWriter(prompt, system, { purpose: "log", jobId: "doctor" });
 
 export async function resolveOpenFields(profile: Profile, entry: QueueEntry | null, filled: { label: string; value: string }[], open: OpenField[]): Promise<Resolution> {
   if (!open.length) return { verdict: "ready", reason: "", answers: [] };

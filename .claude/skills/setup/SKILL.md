@@ -21,6 +21,9 @@ stops halfway and comes back, start from what `doctor` says.
 2. Run `npx tsx src/cli.ts doctor`. Fix what it names, in order:
    - Node.js older than 22, Google Chrome missing, or Claude Code missing:
      tell the user what to install and wait. You cannot install these.
+     (You are running inside Claude Code, so it is present; a user who
+     prefers a Claude API key can add `ANTHROPIC_API_KEY` to `.env` and the
+     commands use the API instead.)
    - Everything else is covered by the steps below.
 
 ## 2. The resume
@@ -82,7 +85,7 @@ months.
 3. Ask them to paste the key after `OPENROUTER_API_KEY=`, save, and tell you
    when it is done.
 4. Run `npx tsx src/cli.ts doctor --online`. It makes one tiny JEV call and
-   one tiny Claude Code call to prove both work.
+   one tiny Claude call to prove both work.
 
 Never ask the user to paste the key into the chat, and never print it. If
 they paste it into the chat anyway, tell them to delete that key at

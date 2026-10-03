@@ -5,7 +5,7 @@
  * pure, so the same numbers can be printed after a run or over all time.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { PATHS } from "../config.js";
+import { PATHS, writerBackend } from "../config.js";
 
 export type JevLine = { at: string; label: string; input_tokens?: number; output_tokens?: number; cost?: number };
 export type WriterLine = { at: string; purpose: string; jobId: string; inputTokens: number; cacheWriteTokens: number; cacheReadTokens: number; outputTokens: number; costUsd: number };
@@ -85,16 +85,23 @@ const usd = (n: number) => `$${n.toFixed(n < 0.01 ? 5 : n < 1 ? 4 : 2)}`;
 
 export function formatCost(c: CostSummary): string {
   const row = (name: string, b: Bucket) => `  ${name.padEnd(12)} ${String(b.calls).padStart(5)} calls  ${String(b.inputTokens).padStart(9)} in  ${String(b.outputTokens).padStart(8)} out  ${usd(b.costUsd)}`;
+  const api = writerBackend() === "api";
   const lines = ["JEV (billed to your OpenRouter key)"];
   for (const [k, b] of Object.entries(c.jev)) lines.push(row(k, b));
-  lines.push("Claude Code (API prices; on a Claude subscription this draws on your plan instead)");
-  for (const [k, b] of Object.entries(c.claude)) lines.push(row(k, b));
-  if (!Object.keys(c.claude).length) lines.push("  no calls recorded");
+  const claudeCalls = Object.values(c.claude).reduce((n, b) => n + b.calls, 0);
+  if (api) {
+    lines.push("Claude (the Claude API, billed to your key)");
+    for (const [k, b] of Object.entries(c.claude)) lines.push(row(k, b));
+    if (!claudeCalls) lines.push("  no calls recorded");
+  } else {
+    lines.push(`Claude: ${claudeCalls} call(s) through Claude Code on your subscription, no separate bill`);
+  }
   lines.push(`Forms: ${c.forms}`);
   if (c.forms) {
-    lines.push(`Per form: JEV ${usd(c.perForm.jevUsd)} + Claude ${usd(c.perForm.claudeUsd)} = ${usd(c.perForm.totalUsd)}`);
-    lines.push(`Per 10 forms: JEV ${usd(c.perForm.jevUsd * 10)} + Claude ${usd(c.perForm.claudeUsd * 10)} = ${usd(c.perForm.totalUsd * 10)}`);
+    lines.push(api ? `Per form: JEV ${usd(c.perForm.jevUsd)} + Claude ${usd(c.perForm.claudeUsd)} = ${usd(c.perForm.totalUsd)}` : `Per form: JEV ${usd(c.perForm.jevUsd)}`);
+    lines.push(api ? `Per 10 forms: JEV ${usd(c.perForm.jevUsd * 10)} + Claude ${usd(c.perForm.claudeUsd * 10)} = ${usd(c.perForm.totalUsd * 10)}` : `Per 10 forms: JEV ${usd(c.perForm.jevUsd * 10)}`);
   }
-  lines.push(`Discovery (rating): ${usd(c.discoveryUsd)}   Total: ${usd(c.totalUsd)}`);
+  const jevTotal = c.discoveryUsd + Object.entries(c.jev).reduce((t, [k, b]) => (k === "rate" ? t : t + b.costUsd), 0);
+  lines.push(api ? `Discovery (rating): ${usd(c.discoveryUsd)}   Total: ${usd(c.totalUsd)}` : `Discovery (rating): ${usd(c.discoveryUsd)}   Total billed (JEV): ${usd(jevTotal)}`);
   return lines.join("\n");
 }
