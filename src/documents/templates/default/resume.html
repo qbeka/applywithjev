@@ -1,0 +1,36 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>{{name}} resume</title>
+<style>
+  @page { size: letter; margin: 0.6in 0.7in; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 10.5pt; line-height: 1.35; color: #111; margin: 0; }
+  h1 { font-size: 20pt; margin: 0; letter-spacing: 0.2px; }
+  .headline { font-size: 11pt; color: #333; margin: 2px 0 4px; }
+  .contact { font-size: 9.5pt; color: #444; margin-bottom: 10px; }
+  h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.8px; border-bottom: 1px solid #999; padding-bottom: 2px; margin: 12px 0 6px; }
+  p { margin: 0 0 6px; } ul { margin: 2px 0 6px; padding-left: 16px; } li { margin: 0 0 2px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .row .where { color: #333; } .row .when { color: #555; font-size: 9.5pt; white-space: nowrap; margin-left: 10px; }
+</style></head>
+<body>
+<h1>{{name}}</h1>
+<div class="headline">{{headline}}</div>
+<div class="contact">{{contact}}</div>
+<p>{{summary}}</p>
+<h2>Skills</h2>
+<p>{{skills}}</p>
+<h2>Experience</h2>
+{{#experience}}
+<div class="row"><div><strong>{{title}}</strong>, <span class="where">{{company}}{{#location}}, {{location}}{{/location}}</span></div><div class="when">{{when}}</div></div>
+<ul>{{#bullets}}<li>{{.}}</li>{{/bullets}}</ul>
+{{/experience}}
+{{#projects.length}}<h2>Projects</h2>{{/projects.length}}
+{{#projects}}
+<div class="row"><div><strong>{{name}}</strong>{{#role}}, <span class="where">{{role}}</span>{{/role}}{{#link}} <span class="where">{{link}}</span>{{/link}}</div><div class="when">{{when}}</div></div>
+<ul>{{#bullets}}<li>{{.}}</li>{{/bullets}}</ul>
+{{/projects}}
+<h2>Education</h2>
+{{#education}}
+<div class="row"><div><strong>{{degree}}, {{field}}</strong>{{#minor}}, minor in {{minor}}{{/minor}}, <span class="where">{{school}}</span></div><div class="when">{{when}}</div></div>
+{{/education}}
+</body></html>

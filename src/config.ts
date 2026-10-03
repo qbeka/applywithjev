@@ -263,8 +263,20 @@ export const DOCUMENTS = {
   paper: { width: 8.5, height: 11 },
   /** How long one headless Chrome print may take. */
   printTimeoutMs: 30_000,
+  /** The stock templates shipped with the tool, and where a person's own go. */
+  templatesShipped: path.join(ROOT, "src", "documents", "templates"),
+  templatesLocal: path.join(ROOT, "documents", "templates"),
+  /** Which template is in use, kept in data/. */
+  activeTemplate: path.join(ROOT, "data", "template.json"),
   /** Words that may be capitalized in a sentence without being a claim about the candidate. */
   plainWords: ["I", "A", "An", "The", "My", "In", "At", "On", "For", "With", "And", "As", "To", "Of", "This", "That", "It", "We", "You", "Your", "Our", "If", "When", "While", "After", "Before", "Over", "Since", "Through", "Then", "There", "Here", "What", "Which", "Who", "How", "Why", "Yes", "No", "Dear", "Hi", "Hello", "Sincerely", "Best", "Regards", "Thank", "Thanks", "Team", "Hiring", "Manager", "Regarding", "Re"],
+} as const;
+
+/** The dashboard: a page on your own machine that reads the records and lets you change a status by hand. */
+export const REPORT = {
+  port: 4545,
+  /** The statuses the page lets a person set, in the order they are offered. */
+  statuses: ["applied", "needs_review", "queued", "skipped", "blocked", "failed"],
 } as const;
 
 export type WriterBackend = "claude-code" | "api";

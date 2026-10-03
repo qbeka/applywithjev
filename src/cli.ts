@@ -5,7 +5,7 @@
  * --json so their output can be read by a program.
  */
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Command } from "commander";
 import { contextFingerprint } from "./answers/resolve.js";
@@ -14,7 +14,7 @@ import { inspect, setValues } from "./browser/formRunner.js";
 import { loadReport, type Fill, type FillReport } from "./browser/report.js";
 import { closeJobTab, hasOpenTab } from "./browser/session.js";
 import { checkJob, watchForConfirmation } from "./browser/submit.js";
-import { loadEnv, DISCOVER, PATHS, RUN } from "./config.js";
+import { loadEnv, DISCOVER, PATHS, REPORT, RUN } from "./config.js";
 import { discover } from "./discover.js";
 import { formatChecks, isReadyToRun, nextStep, runChecks } from "./doctor.js";
 import { JevClient } from "./jev/client.js";
@@ -24,7 +24,11 @@ import { formatCost, loadCost } from "./log/cost.js";
 import { appliedRecords, loadRows, manualRecords, saveRows, toRecord, upsertEntry } from "./log/csv.js";
 import { loadProfile } from "./profile/schema.js";
 import { setDocumentPolicy, tailorJob } from "./documents/tailor.js";
+import { activeTemplate, addTemplate, listTemplates, useTemplate } from "./documents/templates.js";
 import { addJob, looksLikeUrl } from "./jobs/addJob.js";
+import { buildReport } from "./report/data.js";
+import { reportPage } from "./report/page.js";
+import { startReportServer } from "./report/server.js";
 import { endIfAbandoned, HUMAN_PREFIX, noteApplied, pipeline, recordApplied, resolvePage, submitAndRecord, takeJobs, waitsForYou } from "./run/pipeline.js";
 import { brief, printFill, printTable } from "./run/print.js";
 import { limiter } from "./util/pace.js";
@@ -169,6 +173,48 @@ program
     console.log(`
 Cost of this run
 ${formatCost(loadCost(new Date(Date.now() - 60 * 60 * 1000).toISOString()))}`);
+  });
+
+program
+  .command("report")
+  .description("A dashboard of your records on your own machine: totals, applications per day and per board, every row with its status, which you can change by hand. --static writes a snapshot page instead")
+  .option("--port <n>", "the port to listen on", int, REPORT.port)
+  .option("--open", "open the page in your browser")
+  .option("--static <file>", "write a self-contained snapshot page to this file and exit")
+  .action(async (o: { port: number; open?: boolean; static?: string }) => {
+    if (o.static) {
+      writeFileSync(o.static, reportPage(buildReport(loadRows())));
+      console.log(`Wrote ${o.static}`);
+      if (o.open) spawn("open", [o.static], { stdio: "ignore", detached: true }).unref();
+      return;
+    }
+    const address = await startReportServer(o.port);
+    console.log(`Dashboard at ${address}  (Ctrl-C to stop)`);
+    if (o.open) spawn("open", [address], { stdio: "ignore", detached: true }).unref();
+  });
+
+program
+  .command("templates")
+  .description("The resume and cover letter templates: list them, register your own folder of resume.html and cover.html with a mandatory test print, or choose which one tailor uses")
+  .option("--add <dir>", "register the template in this folder, under the name given with --name")
+  .option("--name <name>", "the name for --add: lower-case letters, digits and dashes")
+  .option("--use <name>", "make this template the one tailor uses; default is the stock one")
+  .action(async (o: { add?: string; name?: string; use?: string }) => {
+    if (o.add) {
+      const name = o.name ?? path.basename(path.resolve(o.add)).toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+      const r = await addTemplate(path.resolve(o.add), name);
+      console.log(`Registered ${name} at ${r.template.dir}. Test print: resume ${r.resumePages} page(s)${r.coverPages !== null ? `, cover letter ${r.coverPages} page(s)` : ", no cover.html"}. Proof PDFs are in ${path.join(r.template.dir, ".proof")}.`);
+      console.log(`To use it: npx jev templates --use ${name}`);
+      return;
+    }
+    if (o.use) {
+      const t = useTemplate(o.use);
+      console.log(`tailor now uses ${t.name} (${t.dir})`);
+      return;
+    }
+    const active = activeTemplate();
+    for (const t of listTemplates()) console.log(`${t.name === active.name ? "*" : " "} ${t.name.padEnd(16)} ${t.shipped ? "shipped" : "yours"}  ${t.dir}`);
+    console.log("\n* is the one tailor uses. npx jev templates --use <name> changes it; --add <dir> --name <name> registers your own.");
   });
 
 program

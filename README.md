@@ -23,7 +23,7 @@ add what came of the applications once I know.
 
 ## What this is
 
-A command-line tool and five Claude Code skills that run it with you in the loop. Two models share the thinking: [JEV](https://openrouter.ai/typesafe/jev-1.13) makes every decision that has a fixed set of answers (which of your details goes in this box, which option, how good a fit this job is) for a fraction of a cent, and Claude, on your own subscription, writes the sentences. The code does the rest: finds the jobs, drives Chrome, checks every answer on the page, and keeps your records.
+A command-line tool and nine Claude Code skills that run it with you in the loop. Two models share the thinking: [JEV](https://openrouter.ai/typesafe/jev-1.13) makes every decision that has a fixed set of answers (which of your details goes in this box, which option, how good a fit this job is) for a fraction of a cent, and Claude, on your own subscription, writes the sentences. The code does the rest: finds the jobs, drives Chrome, checks every answer on the page, and keeps your records.
 
 ```
 /setup              /discover              /apply
@@ -72,7 +72,7 @@ claude
 /setup
 ```
 
-`/setup` checks what is installed, reads your resume PDF, asks only what the resume does not say (where you may work, what you are looking for, how you want recurring questions answered), opens `.env` for you to paste your OpenRouter key, builds your profile, finds jobs, rehearses three forms for you to read, and stops for your "go". About 20 minutes, most of it your answers. `/setup` is safe to run again.
+`/setup` checks what is installed, reads your resume PDF and anything else you drop into `documents/` (old resumes, a LinkedIn export, past applications), asks only what those do not say (where you may work, what you are looking for, how you want recurring questions answered), opens `.env` for you to paste your OpenRouter key, builds your profile, finds jobs, rehearses three forms for you to read, and stops for your "go". About 20 minutes, most of it your answers. `/setup` is safe to run again.
 
 ### 3. Find jobs
 
@@ -100,9 +100,12 @@ A Greenhouse, Lever or Ashby link is read from the board, rated, and filled like
 
 ## Other commands
 
-`/setup`, `/discover` and `/apply` are the workflow. Four more skills and a handful of terminal commands extend it once your profile is in place:
+`/setup`, `/discover` and `/apply` are the workflow. Six more skills and a handful of terminal commands extend it once your profile is in place:
 
 - **`/tailor <job id> [--cover]`** writes a one-page resume for the job from your profile and the posting, and with `--cover` a one-page cover letter, and shows you the PDFs. Every number and every name of a tool, a place or a company in the draft is checked against your profile in code; the keywords the posting wants and your profile cannot support are listed, never stuffed in. `/apply --tailor --cover` writes and attaches them as it applies. See [A resume and a cover letter written for the job](#a-resume-and-a-cover-letter-written-for-the-job).
+- **`/report`** opens a dashboard on your own machine: applications sent, today, waiting for you, left for you; sent per day and per board; every job with its status, which you can change by hand, and a notes box per row. `npx jev report --static applications/report.html` writes a snapshot page to keep. Nothing leaves your machine.
+- **`/expand`** reads the public places your profile already links to (your GitHub repositories, your portfolio site) and proposes projects, skills and facts that are missing from the profile, each with its source. Nothing is added without your yes.
+- **`/add-source`** adds a job board or a public list as a source: it inspects the site, writes the source in the shape of the shipped ones, tests it on a captured sample and runs one live query before registering it.
 - **`/profile`** changes your profile, your standing answers (how recurring questions are answered), your drafts and your voice guide with you. When a form answer looked wrong, this is where you fix it, once.
 - **`codes`** puts each form that is waiting for you in front of you, one at a time: a code a board emailed to confirm a person is applying, or a "not a robot" check. You finish it; the tool records it. Run it from a terminal: `npx jev codes`.
 - **`log`**, **`status`** and **`cost`** show your applications (`log --manual` lists what the tool left for you), the totals and skip reasons, and what you have spent. `npx jev log --open` opens your applications in your spreadsheet program.
@@ -121,6 +124,9 @@ jev-job-search/
 │   ├── discover/              # /discover: build the ranked queue
 │   ├── apply/                 # /apply: fill, check, send
 │   ├── tailor/                # /tailor: a resume and a cover letter per job
+│   ├── report/                # /report: the dashboard
+│   ├── expand/                # /expand: enrich the profile from your public links
+│   ├── add-source/            # /add-source: a new job board or list
 │   └── profile/               # /profile: change what the tool knows about you
 ├── applications/              # Your records (git-ignored)
 │   ├── applied.csv            #   what was sent, newest first
@@ -229,6 +235,27 @@ Jobs come from public lists on GitHub (the SimplifyJobs internship and new-grad 
 ### Which jobs it keeps
 
 The filters and the scoring are in `src/config.ts`: early-career titles only, the countries you may work in, how much a Vancouver, Canadian, remote or US posting is worth to you, and how old a posting may be (`/discover --max-age 30`). A posting that prefers another graduation date is ranked lower, not dropped: whether to apply is your decision.
+
+### Custom resume and cover letter templates
+
+The stock resume and cover letter are plain HTML with system fonts, printed to PDF by Chrome. To use your own design, make a folder with a `resume.html` and, if you want letters, a `cover.html`, written with these placeholders:
+
+| Placeholder | What it prints |
+|---|---|
+| `{{name}}`, `{{headline}}`, `{{contact}}`, `{{summary}}`, `{{skills}}` | Your name, the role in the posting's words, your contact line, the summary written for the job, the skills joined with dots (`{{#skillList}}{{.}}{{/skillList}}` for one at a time) |
+| `{{#experience}} ... {{/experience}}` | One block per job, with `{{title}}`, `{{company}}`, `{{location}}`, `{{when}}` and `{{#bullets}}{{.}}{{/bullets}}` inside |
+| `{{#projects}} ... {{/projects}}` | The same, with `{{name}}`, `{{role}}`, `{{link}}`, `{{when}}`, `{{#bullets}}` |
+| `{{#education}} ... {{/education}}` | `{{degree}}`, `{{field}}`, `{{minor}}`, `{{school}}`, `{{when}}` |
+| Cover letter: `{{date}}`, `{{company}}`, `{{role}}`, `{{greeting}}`, `{{#paragraphs}}{{.}}{{/paragraphs}}`, `{{closing}}` | |
+
+Then register it. The tool checks every placeholder, prints a test pair from the example profile, and refuses a template that does not render or runs long:
+
+```bash
+npx jev templates --add ~/my-template --name mine
+npx jev templates --use mine
+```
+
+`npx jev templates` lists what is registered and which one `/tailor` uses. The stock pair is in `src/documents/templates/default/`, the easiest starting point to copy.
 
 ### What the tool will not do
 

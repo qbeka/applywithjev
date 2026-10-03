@@ -1,0 +1,18 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>{{name}} cover letter</title>
+<style>
+  @page { size: letter; margin: 0.8in 0.9in; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.45; color: #111; margin: 0; }
+  h1 { font-size: 20pt; margin: 0; }
+  .contact { font-size: 9.5pt; color: #444; margin-bottom: 14px; }
+  .date { color: #555; margin-bottom: 14px; } p { margin: 0 0 10px; } .sig { margin-top: 18px; }
+</style></head>
+<body>
+<h1>{{name}}</h1>
+<div class="contact">{{contact}}</div>
+<div class="date">{{date}}</div>
+<p>{{company}}<br>{{role}}</p>
+<p>{{greeting}}</p>
+{{#paragraphs}}<p>{{.}}</p>{{/paragraphs}}
+<p class="sig">{{closing}}<br>{{name}}</p>
+</body></html>

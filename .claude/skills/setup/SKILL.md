@@ -26,7 +26,18 @@ stops halfway and comes back, start from what `doctor` says.
      commands use the API instead.)
    - Everything else is covered by the steps below.
 
-## 2. The resume
+## 2. The resume, and anything else in documents/
+
+Look in `documents/` first. Besides `resume.pdf`, a user may have put past
+material there for you to read: old resumes, a LinkedIn profile export as
+PDF, transcripts, past applications, a portfolio page saved as PDF. Read
+every PDF and text file there (the Read tool opens PDFs). Each is a source
+for the profile in step 3: a bullet, a date, a project, a skill that the
+current resume leaves out. Nothing personal in `documents/` is ever
+committed; the folder is git-ignored apart from its README. Re-running
+`/setup` after more files land there is safe: it adds, it does not
+overwrite what the user confirmed.
+
 
 1. Ask for the resume as a PDF. The user can drag the file into the chat or
    give its path.

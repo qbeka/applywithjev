@@ -34,6 +34,15 @@ does not say is refused with the claims named; fix the profile with
 - `coverLetter: "when_asked"` in `data/profile.json` makes every `apply`
   behave as if `--cover` was given.
 
+## Templates
+
+The PDFs come from the template in use: the stock one, or one the user
+registered with `npx jev templates --add <folder> --name <name>` and chose
+with `--use <name>`. `npx jev templates` lists them. A template is a folder
+with `resume.html` and `cover.html` in the small placeholder language the
+README's "Custom resume and cover letter templates" section describes.
+Registering runs a test print; a template that fails is not kept.
+
 ## What you check before the user sends anything
 
 Open `resume.md` and the cover letter text and read them. The rule is the

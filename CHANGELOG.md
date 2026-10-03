@@ -11,7 +11,21 @@ changed for a person using the tool and what changed for a contributor.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- `/report` and `npx jev report`: a dashboard on your own machine from
+  the records, with totals, applications per day and per board, every job
+  by status, tabs, a filter, and a status and a note per row that save at
+  once. `--static` writes a snapshot page.
+- Custom resume and cover letter templates (`npx jev templates --add
+  <folder> --name <name>`, `--use <name>`): your own HTML in a small
+  placeholder language, checked and test-printed before it is kept. The
+  stock pair moved to `src/documents/templates/default/`.
+- `/expand`: proposes projects, skills and facts from the public links in
+  the profile, each with its source, for the person to confirm.
+- `/add-source`: adds a job board or a list as a source, in the shape of the
+  shipped ones, with a captured fixture and a live query before it counts.
+- `/setup` reads everything in `documents/`: old resumes, a LinkedIn
+  export, past applications, as sources for the profile.
 
 ## [1.1.0] - 2026-10-02
 

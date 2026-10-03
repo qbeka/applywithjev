@@ -361,6 +361,11 @@ it is not an application.
 
 None of this is built yet.
 
+- **`/outcome`**: record what came of an application (interview stage,
+  offer, rejection, silence), archive what was sent per company, and
+  surface open applications that went quiet with a drafted follow-up.
+- **`/interview`**: a prep pack for a scheduled interview from the exact
+  posting and the documents they read, and a mock interview in chat.
 - **SmartRecruiters.** Its form is drawn in a way the tool cannot read yet.
 - **Windows and Linux.** The tool is tested only on a Mac.
 
