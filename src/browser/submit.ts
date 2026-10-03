@@ -102,7 +102,7 @@ const DECLINE_COOKIES = "^\\s*(necessary only|only necessary|necessary cookies o
 export const ALREADY_APPLIED = /recently applied for another role|unable to accept an additional application|already (applied|submitted an application)/i;
 
 /** A page that asks the person to prove they are not a robot (BambooHR after Submit). Only the person can pass it. */
-export const HUMAN_CHECK = /not a robot|i am human|i'm human|captcha/i;
+export const HUMAN_CHECK = /not a robot|i am human|i'm human|captcha|human check/i;
 
 /** A board that emails a code to confirm a person is applying. Only the person can enter it. */
 export const SECURITY_CODE = /verification code was sent|enter the \S+ code|security code/i;
