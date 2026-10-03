@@ -393,6 +393,15 @@ them.
 npx tsx src/cli.ts log --manual
 ```
 
+### Take-home assignments
+
+Some companies ask for a take-home assignment next to the application. The
+tool sends the application anyway and lists the assignment in
+`takehome.csv`, also at the top of the project folder: the company, the
+role, the assignment's link, and what the form said about it. Do these by
+hand; the company will only read your application once it has the
+assignment.
+
 ### Every job considered
 
 `data/applications.csv` is the full record. It lists every job the tool

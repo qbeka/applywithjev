@@ -47,7 +47,9 @@ profile. The tool makes that the only way.
   is answered with its most private choice (necessary only, or reject).
   The tool never clicks "accept all".
 - The runner's Chrome profile lives in `data/runs/chrome-profile`, apart
-  from your own browser, with no saved logins.
+  from your own browser, with no saved logins. Its cookies, cache and site
+  data are cleared between runs after every `RUN.clearBrowsingEvery`
+  applications, never while a form is open.
 - JEV usage is appended to `data/runs/jev-usage.jsonl` (ids, token counts,
   cost; no content).
 - What the tool learns about sites (`data/knowledge.json`) holds host names,

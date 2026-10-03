@@ -71,6 +71,13 @@ Keep a Changelog and the project uses Conventional Commits.
   day. Its jobs stay in the queue.
 - A cookie banner that lies over Submit is answered with its most private
   choice (necessary cookies only, or reject). The tool never accepts all.
+- Take-home assignments: a form that asks for one is still sent, and the
+  assignment's link and instructions go to `takehome.csv` for the person.
+- The runner's cookies, cache and site data are cleared between runs after
+  every `RUN.clearBrowsingEvery` applications.
+- A required group of checkboxes counts as answered once any box in it is
+  ticked, also when each box has a name of its own (Ashby, Notion).
+- JazzHR's Submit, drawn as a link, is found.
 - A checkbox that acknowledges an agreement, a notice or terms follows the
   person's standing answers. Typing a name to sign, and any NDA, stay the
   person's to do.
