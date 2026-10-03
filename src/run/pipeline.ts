@@ -23,6 +23,7 @@ import { loadRows, saveRows, takeHomeCell, upsertEntry } from "../log/csv.js";
 import { loadProfile, type Profile } from "../profile/schema.js";
 import { limiter, paced, spacer } from "../util/pace.js";
 import { outcomeOf } from "./outcome.js";
+import { documentPolicy, tailorJob } from "../documents/tailor.js";
 import { printFill } from "./print.js";
 
 export type RunOptions = { submit: boolean; dry: boolean; fresh: boolean; quiet: boolean; fillOnly?: boolean };
@@ -280,7 +281,15 @@ export async function pipeline(entries: QueueEntry[], o: RunOptions): Promise<{ 
     if (!o.quiet) printFill(r);
     if (await settle(jev, r, o)) sent.push(r.jobId);
   };
+  // The documents for the next job are written while this one is being filled, so one job at a time stays quick.
+  const prefetch = (i: number) => {
+    const next = entries[i + 1];
+    const policy = documentPolicy();
+    if (!next || !policy.resume || o.dry) return;
+    tailorJob(profile, next, { cover: policy.cover }).catch(() => undefined);
+  };
   await paced(entries, (e) => hostOf(applyUrlFor(asJob(e))), async (e) => {
+    prefetch(entries.indexOf(e));
     const first = await fillOnce(jev, profile, e);
     reports[entries.indexOf(e)] = first;
     const rest = (async () => {
@@ -288,10 +297,10 @@ export async function pipeline(entries: QueueEntry[], o: RunOptions): Promise<{ 
       if (RUN.fillAttempts > 1 && worthAnotherGo(r)) again.push(e);
       else await finish(e, r);
     })().catch((err) => console.log(`${e.job.id}  ${err instanceof Error ? err.message : String(err)}`));
-    // A site that saves every field to its server (Ashby) drops saves when several of its forms are being written at
-    // once. There, one job goes from fill to submit before the next one starts. Elsewhere the rest of a job's path
-    // does not hold a fill slot: the next form starts filling now.
-    if (RUN.gentleHosts.some((h) => hostIs(hostOf(applyUrlFor(asJob(e))), h))) await rest;
+    // One job at a time (RUN.fillConcurrency 1) means each job goes from fill to submit before the next opens. With more
+    // tabs, a site that saves every field to its server (Ashby) still gets that, since it drops saves from several forms at
+    // once; elsewhere the rest of a job's path does not hold a fill slot and the next form starts filling now.
+    if (RUN.fillConcurrency === 1 || RUN.gentleHosts.some((h) => hostIs(hostOf(applyUrlFor(asJob(e))), h))) await rest;
     else after.push(rest);
     return first;
   });

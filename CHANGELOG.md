@@ -11,7 +11,15 @@ changed for a person using the tool and what changed for a contributor.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+- One job at a time by default (`RUN.fillConcurrency` 1): open, fill, send,
+  close, next. The pauses between submissions to one site are seconds, not
+  most of a minute, since one job at a time is already the pacing. The next
+  job's tailored documents are written while the current one is filled.
+- The truth gate knows a plural, a thousands separator and a phrase made of
+  the profile's own words, so "REST APIs" or "18,000+" no longer refuse a
+  draft. A draft it does refuse no longer blocks the job: the profile's own
+  resume is sent instead, and the run says so.
 
 ## [1.2.1] - 2026-10-02
 

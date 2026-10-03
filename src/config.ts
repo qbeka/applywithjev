@@ -316,19 +316,21 @@ export const DOCTOR = {
 export const RUN = {
   /** How many queued jobs `discover` lists when it is done. */
   listed: 50,
-  /** Forms the runner fills side by side, one tab each. */
-  fillConcurrency: 5,
+  /**
+   * Forms the runner fills side by side, one tab each. One means one job at a time: open, fill, send,
+   * close, next. That is the cleanest to watch and the fastest per form, because no tab waits for the
+   * window; the documents for the next job are written while this one is being filled.
+   */
+  fillConcurrency: 1,
   /** Of those, how many may be on the same site at once, and the pause between opening two forms there. Job boards throttle bursts. */
-  perHostConcurrency: 2,
+  perHostConcurrency: 1,
   /** Sites that save every field to their server as it changes, and rate-limit bursts: one form at a time, with a longer pause. */
   gentleHosts: ["ashbyhq.com"],
-  gentleGapMs: 6_000,
-  /** How long `codes` waits on one form for the person to type the code and send it. */
-  codeWaitMs: 240_000,
-  /** The same pause for a site that has answered a burst with an emailed code before. */
-  submitGapAfterCodeMs: 75_000,
-  /** The pause between two submissions to the same site. A burst of applications from one person looks like a robot, and boards answer it with a human check. */
-  submitGapMs: 45_000,
+  gentleGapMs: 3_000,
+  /** The pause before a submission to a site that has answered a burst with an emailed code before. */
+  submitGapAfterCodeMs: 15_000,
+  /** The pause between two submissions to the same site. A burst of applications from one person reads as a robot; one form at a time is most of the pacing already. */
+  submitGapMs: 5_000,
   /** The most pages of one form the tool will walk. A form that goes on longer is left for the person. */
   maxPages: 8,
   /** After this many applications the runner's cookies, cache and site data are cleared, between runs, so one long session does not read as a robot. */
@@ -339,5 +341,5 @@ export const RUN = {
   fillTimeoutMs: 180_000,
   /** Forms handed to the writer at once. */
   writerConcurrency: 3,
-  hostGapMs: 2_500,
+  hostGapMs: 1_000,
 } as const;

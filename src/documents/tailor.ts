@@ -71,9 +71,15 @@ const REVIEW_RULES = [
 
 /** The claims a draft makes that the profile does not hold: numbers, and capitalized names of tools, places and companies. */
 export function unsupportedClaims(t: Tailored, profile: Profile, posting: string): string[] {
-  const corpus = JSON.stringify({ e: profile.experience, p: profile.projects, s: profile.skills, f: profile.facts, su: profile.summary, ed: profile.education, n: profile.name, l: profile.links, a: profile.address, b: profile.answers }).toLowerCase();
+  const raw = JSON.stringify({ e: profile.experience, p: profile.projects, s: profile.skills, f: profile.facts, su: profile.summary, ed: profile.education, n: profile.name, l: profile.links, a: profile.address, b: profile.answers }).toLowerCase();
+  // "18,000+" in the draft and "18,000" in the profile are the same number; "REST APIs" and "REST API" the same thing.
+  const corpus = `${raw} ${raw.replace(/(\d),(?=\d{3})/g, "$1")}`;
   const postingCorpus = posting.toLowerCase();
   const plain = new Set<string>(DOCUMENTS.plainWords.map((w) => w.toLowerCase()));
+  const known = (word: string, allowPosting: boolean) => {
+    const forms = [word, word.replace(/s$/, ""), word.replace(/es$/, ""), `${word}s`];
+    return forms.some((f) => f.length >= 2 && (corpus.includes(f) || (allowPosting && postingCorpus.includes(f))));
+  };
   const bad = new Set<string>();
   const check = (text: string, allowPosting: boolean) => {
     for (const n of text.match(/\d[\d,.]*\s*(?:%|k\b|\+)?/g) ?? []) {
@@ -86,15 +92,18 @@ export function unsupportedClaims(t: Tailored, profile: Profile, posting: string
       words.forEach((raw, i) => {
         const w = raw.replace(/^[("'\[]+|[)"',.:;!?\]]+$/g, "");
         if (!/^[A-Z][A-Za-z0-9+#.-]{1,}$/.test(w) || i === 0 || plain.has(w.toLowerCase())) return;
-        const l = w.toLowerCase();
-        if (corpus.includes(l) || (allowPosting && postingCorpus.includes(l))) return;
+        if (known(w.toLowerCase(), allowPosting)) return;
         bad.add(w);
       });
     }
   };
   check(t.headline, true);
   check(t.summary, true);
-  for (const s of t.skills) if (!corpus.includes(s.toLowerCase())) bad.add(s);
+  // A skill is a phrase; it is the profile's when every word of it that carries meaning is.
+  for (const s of t.skills) {
+    const words = s.toLowerCase().split(/[^a-z0-9+#.]+/).filter((w) => w.length >= 3 && !plain.has(w));
+    if (!corpus.includes(s.toLowerCase()) && !(words.length && words.every((w) => known(w, false)))) bad.add(s);
+  }
   for (const e of t.experience) {
     if (!profile.experience.some((x) => x.company.toLowerCase().includes(e.company.toLowerCase()) || e.company.toLowerCase().includes(x.company.toLowerCase()))) bad.add(`job at ${e.company}`);
     for (const b of e.bullets) check(b, false);
@@ -153,7 +162,18 @@ const parse = (text: string): Tailored => {
  * more with the unsupported ones named, if the first draft had any), renders the PDFs, and keeps
  * them under documents/tailored/<Company>_<Role>_<job id>/. Existing documents for the same profile are reused unless fresh.
  */
-export async function tailorJob(profile: Profile, entry: QueueEntry, opts: { cover: boolean; fresh?: boolean }): Promise<Documents & { tailored: Tailored; reused: boolean }> {
+const inflight = new Map<string, Promise<Documents & { tailored: Tailored; reused: boolean }>>();
+
+/** One job's documents are written once at a time: a second call while the first is running joins it. */
+export function tailorJob(profile: Profile, entry: QueueEntry, opts: { cover: boolean; fresh?: boolean }): Promise<Documents & { tailored: Tailored; reused: boolean }> {
+  const running = inflight.get(entry.job.id);
+  if (running && !opts.fresh) return running;
+  const p = tailorJobNow(profile, entry, opts).finally(() => inflight.delete(entry.job.id));
+  inflight.set(entry.job.id, p);
+  return p;
+}
+
+async function tailorJobNow(profile: Profile, entry: QueueEntry, opts: { cover: boolean; fresh?: boolean }): Promise<Documents & { tailored: Tailored; reused: boolean }> {
   const have = opts.fresh ? null : documentsFor(entry.job.id, profile);
   if (have && (!opts.cover || have.cover)) {
     const saved = JSON.parse(readFileSync(have.json, "utf8")) as { tailored: Tailored };

@@ -276,7 +276,15 @@ async function mapFormFresh(jev: JevClient, profile: Profile, job: Job, dump: Fi
   let docs = documentsFor(job.id, profile);
   if ((policy.resume && !docs) || (policy.cover && coverBox && !docs?.coverText)) {
     const entry = loadQueue().entries.find((e) => e.job.id === job.id);
-    if (entry) docs = await tailorJob(profile, entry, { cover: policy.cover && coverBox });
+    if (entry) {
+      try {
+        docs = await tailorJob(profile, entry, { cover: policy.cover && coverBox });
+      } catch (err) {
+        // A draft the truth gate refused, or a print that failed, is no reason to skip the job: the profile's own resume goes.
+        console.log(`   tailored documents not used: ${err instanceof Error ? err.message : String(err)}. Sending the profile's resume instead.`);
+        docs = null;
+      }
+    }
   }
   const coverText = policy.cover ? (docs?.coverText ?? null) : null;
   dump.fields.forEach((f) => {

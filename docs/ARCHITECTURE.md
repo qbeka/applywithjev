@@ -80,7 +80,7 @@ Each job moves on its own through its steps, and nothing waits for the
 batch. One exception: on a board that saves every field to its server
 (`RUN.gentleHosts`, Ashby), one job goes from fill to submit before the next
 starts, because saves are dropped when several of its forms are written at
-once. Fills run `RUN.fillConcurrency` at once, paced per site
+once. Fills run `RUN.fillConcurrency` at once (one by default: a job goes from fill to submit before the next opens, and the next job's tailored documents are written meanwhile), paced per site
 (`src/util/pace.ts`). The moment a fill ends, its form goes to the writer,
 `RUN.writerConcurrency` at once. The moment a form is ready, it is
 submitted: one click at a time, with `RUN.submitGapMs` between two

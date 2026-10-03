@@ -39,6 +39,13 @@ describe("the truth gate on a tailored draft", () => {
     const claims = unsupportedClaims(t, profile, "Acme Robotics warehouse robots");
     expect(claims).toEqual(["Terraform"]);
   });
+  it("knows a plural, a thousands separator and a phrase made of the profile's own words", () => {
+    const t = draft();
+    t.skills.push(`${profile.skills.frameworks[0]}s`);
+    t.summary = `Wrote ${first.bullets[0]} Reached 18,000+ people.`;
+    const rich = { ...profile, facts: [...profile.facts, "Reached 18,000 people with it."] };
+    expect(unsupportedClaims(t, rich, "Acme Robotics warehouse robots")).toEqual([]);
+  });
   it("refuses a skill the profile does not list", () => {
     const t = draft();
     t.skills.push("Rust");
